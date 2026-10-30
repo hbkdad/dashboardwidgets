@@ -10,6 +10,10 @@ Mirrors `../design/business-and-roadmap.md` §5. Targets are planning assumption
 - [ ] Interviews and landing page (non-code, see design docs); add a "post your setup card" test to measure copy-culture on Windows
 - Skipped by decision: hands-on Seelen UI test.
 
+- [x] host-demo: plinth-host + WebView2 end to end, 11/11 checks (see `apps/host-demo/RESULTS.md`)
+- [ ] Spike D: local deny-by-default proxy (per-widget attribution, SmartScreen allow-list, HTTPS/WebSocket, failure mode) to close the bare-connection gap (decision D8)
+- [ ] Name clearance and public brand (decision D2)
+
 ## Alpha (MVP, about 4–6 months after Phase 0)
 Window-layer manager, widget host with permission bridge, Permission Center UI (grants, activity log, revoke, Safe mode), 10 first-party widgets, Scenes (local), remix editor, minimal pause governor, theme tokens, revert/profile export, accessibility baseline, signed installer. Gate: Windows test matrix passes; benchmark suite in CI.
 

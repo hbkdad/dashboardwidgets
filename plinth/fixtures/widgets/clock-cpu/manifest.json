@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "id": "com.plinth.clock-cpu",
+  "name": "Clock and CPU (demo)",
+  "version": "1.0.0",
+  "type": "widget",
+  "permissions": [
+    { "id": "system.cpu", "reason": "Shows how busy your processor is" },
+    { "id": "storage", "reason": "Remembers your settings (declared but NOT granted in the demo)" }
+  ]
+}

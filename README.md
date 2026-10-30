@@ -32,3 +32,6 @@ Permission Center, sandboxed widget runtime, Scenes, remix editor (builder-lite)
 3. **Scope/name:** is the primary user casual aesthetic users and streamers (this design), or Rainmeter power users (a different, builder-lite product)? And pick a name to run trademark clearance on (Plinth / Tessel / Dwell).
 
 Note on your second prompt: its phase-pause protocol and file names (`01_...md`) were not used; I followed the first prompt's deliverable list. Its extras (SWOT, AI-assisted layouts, node-based scripting) are covered or deliberately deferred (see PRD §5.3).
+
+## Update 2026-10-30: decisions made on your behalf
+See `design/decisions.md`: Apache-2.0 for engine crates (store and curation proprietary); merchant-of-record payments; primary users casual-aesthetic users and streamers; **"Plinth" is a codename and has real naming collisions (FreedomBox Plinth, Plinth UI, an iOS app, an Australian PLINTH trademark application for software); do not use it publicly**; all widget network through a local Plinth proxy (a bare-connection leak was found and a mitigation validated in `plinth/apps/host-demo/RESULTS.md`).

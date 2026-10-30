@@ -76,3 +76,15 @@ So **about +1 process and +29 MB private per extra origin** (compare about 2.5 M
 2. It costs about 29 MB and one process per widget, so use a **hybrid**: first-party/bundled widgets share one trusted origin (cheap); third-party widgets get their own origin; cap concurrent third-party widgets (a soft limit around 5-8 per monitor) and show the memory cost in the Permission Center.
 3. The Permission Center and Safe mode must still live outside the widget host (separate window/process); the host-page timer was unaffected here, but only five runs and one attack pattern were tested.
 4. Remaining unknowns: why the srcdoc/opaque-origin frames shared a renderer while origin-keyed frames did not (assumed site isolation; UNVERIFIED), memory bombs, GPU abuse, many origins at scale, whether Chromium merges processes under memory pressure, custom-protocol behavior on other WebView2 versions.
+
+---
+
+# CORRECTION (2026-10-30, found while building host-demo)
+
+The earlier claim "0 requests reached the local server" in protocol mode counted only lines starting with GET or POST. A re-check of the raw report shows the probe does print a blank hit line there (the "(none)" marker is absent), i.e. **one bare TCP connection with no request line reached the server**, caused by the widget navigating its own frame to an attacker URL (the self-navigation test). No HTTP request, no data in a URL, but the destination address was contacted.
+
+What this means: a widget can make the browser open a connection to a host of its choosing. With a DNS name the attacker controls (for example `<stolen-bits>.attacker.example`) the name lookup alone can carry a few bytes out even if no HTTP request is ever sent. This is a low-bandwidth covert channel. It was reproduced in 4 of 4 direct-mode runs in `apps/host-demo`. The host `frame-src` allowlist and the header CSP do NOT stop it. Not tested here: whether a real external DNS lookup occurs (I only observed the connection to a loopback address), so treat the DNS-exfiltration description as a reasoned consequence, not an observation.
+
+Mitigation experiment: forcing all WebView2 traffic through a Plinth-controlled local proxy (`--proxy-server` plus `--proxy-bypass-list=<-loopback>`) produced 0 direct connections to the destination in 4 of 4 runs; the only traffic that reached the proxy was the browser's own SmartScreen CONNECT requests and connections to the proxy itself. See `plinth/apps/host-demo/RESULTS.md`.
+
+The "0 leaked requests" statements in this file, in `design/architecture.md`, and in `CHANGELOG.md` v0.1.0/v0.2.0 should be read as "0 HTTP requests; 1 bare connection (known gap)".
