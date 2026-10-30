@@ -14,6 +14,11 @@ try {
     $state = Join-Path $env:TEMP "plinth-verify-state.json"
     Remove-Item $state -ErrorAction SilentlyContinue
     $env:PLINTH_STATE = $state; $env:PLINTH_AUTOTEST = "28"
+    # Wallpaper checks use a throwaway user library. Set PLINTH_TEST_VIDEO to an .mp4 (make one with scripts/make-test-video.py)
+    # to also test video import, ranged streaming and resume after a pause; without it those two checks pass trivially.
+    $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-verify-walls"
+    Remove-Item $env:PLINTH_USER_WALLPAPERS -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $env:PLINTH_TEST_VIDEO) { Write-Host "note: PLINTH_TEST_VIDEO not set; video checks are skipped" }
     & .\target\release\plinth-app.exe
     if ($LASTEXITCODE -ne 0) { throw "app autotest failed" }
   }

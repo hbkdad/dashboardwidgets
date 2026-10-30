@@ -107,10 +107,10 @@
     },
     {
       "id": "F17",
-      "name": "Live motion wallpaper",
+      "name": "Live wallpapers: video, animated web pages, opt-in scene drift",
       "status": "partial",
-      "evidence": "opt-in CSS drift animation; cost measured (about 9% vs 2% of one core while visible)",
-      "missing": "video and web wallpapers, per-monitor targeting"
+      "evidence": "autotest 19/19 with a real 1080p H.264 clip: dropped video imported, streamed in 206 ranges, playing after governor pause/resume; click test 33/33 selects Aurora; 47 wallpaper unit tests; cost measured per kind (scripts/measure-wallpapers.ps1)",
+      "missing": "per-monitor targeting (NOT TESTED, single monitor here); GPU load not measured; audio-reactive wallpapers; wallpaper thumbnails in the hub; web-wallpaper import UI (folders are added by hand)"
     },
     {
       "id": "F18",

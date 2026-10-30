@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#03040a;overflow:hidden}canvas{width:100%;height:100%;display:block}</style>
+<canvas id="c"></canvas><script>
+// Starfield: three parallax layers drifting slowly, 30 frames per second.
+const c=document.getElementById('c'),x=c.getContext('2d');function fit(){c.width=innerWidth;c.height=innerHeight}fit();addEventListener('resize',fit);
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const stars=Array.from({length:260},()=>({x:rnd(),y:rnd(),z:.2+rnd()*.8,t:rnd()*6}));
+let last=0;
+function frame(t){requestAnimationFrame(frame);if(t-last<33)return;const dt=(t-last)/1000;last=t;
+const g=x.createRadialGradient(c.width*.7,c.height*.3,0,c.width*.7,c.height*.3,c.width*.8);g.addColorStop(0,'#101a3a');g.addColorStop(1,'#03040a');x.fillStyle=g;x.fillRect(0,0,c.width,c.height);
+for(const s of stars){s.x-=dt*.006*s.z;if(s.x<0)s.x+=1;const tw=.65+.35*Math.sin(t*.002+s.t);x.fillStyle='rgba(220,230,255,'+(s.z*tw).toFixed(2)+')';const r=.6+s.z*1.4;x.fillRect(s.x*c.width,s.y*c.height,r,r)}}
+requestAnimationFrame(frame);</script>

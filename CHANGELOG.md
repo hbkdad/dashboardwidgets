@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-30
+Wallpaper pillar (decision D23).
+### Added
+- `plinth-core::wallpaper`: wallpaper manifest parsing with a closed id/entry/file-type vocabulary, HTTP range parsing, safe slugs (11 tests).
+- `plinth-host::WallpaperStore`: scans bundled and user wallpaper folders, serves them under the `pwv` origin with Range support, per-file type allow-list, symlink-safe path resolution, a CSP that forbids connections for web wallpapers; imports and removes the user's own video copies (8 tests).
+- Three bundled animated web wallpapers (Aurora, Starfield, Embers) and video wallpapers (`.mp4`, `.webm`, `.m4v`) added by dropping a file on the hub.
+- Hub "Wallpapers" view: pick, add by drag and drop, remove, open folder, rescan. Wallpapers pause with the governor (video paused, web page unloaded).
+- Measured wallpaper cost in the Impact Meter (1080p, one machine, single 20 s runs; baseline 301.7 MB / 0.70% of one core visible): Aurora +40 MB / +2.6%, Starfield +50 MB / +6.8%, Embers +145 MB / +7.2%, 1080p30 H.264 video +90 MB / +2.6%; covered by other windows about 0% CPU. GPU load not measured.
+- `scripts/measure-wallpapers.ps1`, `scripts/make-test-video.py`; app autotest checks for wallpaper serving and video playback.
+
 ## [0.7.0] - 2026-10-30
 Monitoring pillar and the all-in-one direction (decisions D16-D22).
 ### Added

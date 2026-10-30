@@ -8,6 +8,7 @@ $exe = "$root\plinth\target\release\plinth-app.exe"
 $state = Join-Path $env:TEMP "plinth-click-state.json"; $log = Join-Path $env:TEMP "plinth-click-app.txt"
 Remove-Item $state, $log -ErrorAction SilentlyContinue
 $env:PLINTH_STATE = $state
+$env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-click-walls"; Remove-Item $env:PLINTH_USER_WALLPAPERS -Recurse -Force -ErrorAction SilentlyContinue
 $p = Start-Process -FilePath $exe -RedirectStandardOutput $log -PassThru -WindowStyle Hidden
 $results = @()
 function Check($name, [bool]$ok) { $script:results += [pscustomobject]@{ Name = $name; Ok = $ok }; "{0} {1}" -f $(if ($ok) { "[PASS]" } else { "[FAIL]" }), $name }
@@ -48,6 +49,17 @@ try {
   Invoke-ByName $w "Network" | Out-Null
   Start-Sleep -Milliseconds 600
   Check "Network view shows the proxy explanation" ([bool](Find-ByName $w "Widgets never talk to the internet directly."))
+  # --- wallpapers ---
+  Invoke-ByName $w "Wallpapers" | Out-Null
+  Start-Sleep -Milliseconds 600
+  Check "Wallpapers view shows its heading" (Wait-Until { [bool](Find-ByName $w "Motion that respects your PC.") } 6)
+  $radioCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::RadioButton)
+  $card = $null; Wait-Until { $script:card = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $radioCond) | Where-Object { $_.Current.Name -like "Aurora*" } | Select-Object -First 1; [bool]$script:card } 6 | Out-Null
+  Check "the bundled Aurora wallpaper is listed" ([bool]$card)
+  if ($card) { try { $card.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select() } catch { try { $card.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch {} } }
+  Check "choosing Aurora persisted wallpaper=com.plinth.aurora" (Wait-Until { (St).wallpaper -eq "com.plinth.aurora" })
+  Check "wallpaper change was handled by the app" (Wait-Until { Select-String -Path $log -Pattern "hub: wallpaper handled" -Quiet })
+  Check "the cost chip names the wallpaper's measured cost" (Wait-Until { $e = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -like "adds *MB*" } | Select-Object -First 1; [bool]$e } 6)
   # --- background mode and single instance ---
   Check "tray icon was created" (Select-String -Path $log -Pattern "tray icon: created" -Quiet)
   Invoke-ByName $w "Close" | Out-Null

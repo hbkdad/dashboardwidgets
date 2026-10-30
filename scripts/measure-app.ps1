@@ -1,15 +1,17 @@
 # Measures the Plinth app's memory (private bytes, per WebView2 profile) and idle CPU after a warm-up.
-# Usage: powershell -File scripts/measure-app.ps1 -State <state.json> [-HideHub] [-Motion] [-Seconds 30]
+# Usage: powershell -File scripts/measure-app.ps1 -State <state.json> [-HideHub] [-Motion] [-Wallpaper <id>] [-Seconds 30]
+# (set PLINTH_USER_WALLPAPERS to a folder of imported wallpapers to measure a video).
 # Starts the release exe with an isolated state file whose "applied" is true (so the desktop layer is up), optionally
 # hides the hub through UI Automation (background mode), waits, then samples the whole process tree twice.
-param([string]$State, [switch]$HideHub, [switch]$Motion, [switch]$ShowDesktop, [int]$Seconds = 30)
+param([string]$State, [switch]$HideHub, [switch]$Motion, [switch]$ShowDesktop, [int]$Seconds = 30, [string]$Wallpaper = "")
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\uia.ps1"
 $root = Resolve-Path "$PSScriptRoot\.."
-$exe = "$root\plinth\target\release\plinth-app.exe"
+$exe = if ($env:PLINTH_EXE) { $env:PLINTH_EXE } else { "$root\plinth\target\release\plinth-app.exe" }
 $j = Get-Content $State -Raw | ConvertFrom-Json
 $j.applied = $true
 if ($j.PSObject.Properties.Name -contains "motion") { $j.motion = [bool]$Motion } else { $j | Add-Member motion ([bool]$Motion) }
+if ($j.PSObject.Properties.Name -contains "wallpaper") { $j.wallpaper = $Wallpaper } else { $j | Add-Member wallpaper $Wallpaper }
 $tmp = Join-Path $env:TEMP "plinth-measure-state.json"
 [System.IO.File]::WriteAllText($tmp, ($j | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
 $env:PLINTH_STATE = $tmp
@@ -36,5 +38,5 @@ try {
     $total += $priv
     "{0,-6} procs={1,2} private={2,7} MB  workingset_sum={3,7} MB" -f $k, $rows.Count, $priv, $ws
   }
-  "TOTAL  procs={0} private={1:N1} MB  idle cpu over {2:N0}s = {3:N2}% of one core  (motion={4}, hub hidden={5}, desktop shown={6})" -f $b.Procs, $total, $secs, ((($b.Cpu - $a.Cpu) / $secs) * 100), [bool]$Motion, [bool]$HideHub, [bool]$ShowDesktop
+  "TOTAL  procs={0} private={1:N1} MB  idle cpu over {2:N0}s = {3:N2}% of one core  (motion={4}, hub hidden={5}, desktop shown={6}, wallpaper={7})" -f $b.Procs, $total, $secs, ((($b.Cpu - $a.Cpu) / $secs) * 100), [bool]$Motion, [bool]$HideHub, [bool]$ShowDesktop, $Wallpaper
 } finally { if ($ShowDesktop) { [K]::keybd_event(0x5B,0,0,[UIntPtr]::Zero); [K]::keybd_event(0x44,0,0,[UIntPtr]::Zero); [K]::keybd_event(0x44,0,2,[UIntPtr]::Zero); [K]::keybd_event(0x5B,0,2,[UIntPtr]::Zero) }; if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force }; Get-Process plinth-app -ErrorAction SilentlyContinue | Stop-Process -Force }

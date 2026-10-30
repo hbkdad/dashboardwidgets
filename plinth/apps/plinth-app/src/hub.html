@@ -42,6 +42,16 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 .sw[aria-checked=true]{background:var(--accent);border-color:transparent}.sw[aria-checked=true]::after{transform:translateX(18px);background:var(--ink)}.sw:disabled{opacity:.4}
 .log{font:.75rem/1.55 var(--mono);padding:12px;max-height:340px;overflow:auto}.log div{display:grid;grid-template-columns:34px 1fr auto;gap:10px;padding:5px 8px;border-radius:8px}.log div:nth-child(odd){background:rgba(255,255,255,.025)}.ok{color:var(--sig)}.no{color:var(--red)}
 .meter{height:10px;border-radius:5px;background:var(--s3);overflow:hidden;margin-top:8px}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--info));transition:width .6s var(--ease)}
+.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;margin-top:22px}
+.wcard{position:relative;text-align:left;border:1px solid var(--bd);border-radius:18px;background:var(--s1);padding:0;overflow:hidden;transition:transform .3s var(--ease),border-color .15s}.wcard:hover{transform:translateY(-4px)}
+.wcard[aria-checked=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.wcard .th{aspect-ratio:16/9;display:grid;place-items:center;background:linear-gradient(135deg,#1b2340,#10281f)}.wcard .th.v{background:linear-gradient(135deg,#2b1b4d,#5b2a6b 55%,#d9667a)}.wcard .th.n{background:var(--wall)}
+.wcard .th svg{width:34px;height:34px;stroke:#fff;fill:none;stroke-width:1.6;opacity:.9}
+.wcard .mt2{padding:10px 14px 14px}.wcard small{color:var(--mut)}
+.wrm{position:absolute;top:8px;right:8px;border:1px solid var(--bd2);background:rgba(10,12,16,.75);border-radius:10px;padding:4px 10px;font-size:.75rem}.wrm:hover{background:var(--red);color:#1a0000}
+.drop{margin-top:22px;border:1.5px dashed var(--bd2);border-radius:20px;padding:22px;display:flex;gap:16px;align-items:center;justify-content:space-between;background:rgba(255,255,255,.02);transition:border-color .15s,background .15s}
+.dropping .drop{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.dropov{position:fixed;inset:0;z-index:30;display:none;place-items:center;background:rgba(5,6,9,.78);backdrop-filter:blur(8px);font:600 1.6rem var(--disp);pointer-events:none}.dropping .dropov{display:grid}
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:var(--s3);border:1px solid var(--bd2);border-radius:16px;padding:12px 18px;transition:transform .3s var(--ease);z-index:9}.toast.on{transform:translate(-50%,0)}
 .modal{position:fixed;inset:0;background:rgba(5,6,9,.8);backdrop-filter:blur(10px);display:none;place-items:center;z-index:20;padding:20px}.modal.on{display:grid}.sheet{width:min(640px,100%);padding:32px}
 </style></head>
@@ -50,6 +60,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <nav class="rail" aria-label="Primary"><div class="logo" aria-hidden="true"><i></i></div>
 <div class="nav" id="nav">
 <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
+<button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
 <button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
 <button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
 <div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
@@ -62,6 +73,12 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <div class="pw" style="left:6%;bottom:12%;width:25%"><div style="font-weight:600">Notes</div><small>Type a note…</small></div></div>
 <div class="scenes" role="radiogroup" aria-label="Choose a scene" id="scenes"></div>
 <div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span> <span class="chip warn" id="pz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="sw" id="motion" role="switch" aria-checked="false" aria-label="Live motion wallpaper (uses more CPU)" title="Live motion wallpaper: uses noticeably more CPU and GPU; pauses in games"></button><span style="font-size:.8125rem;color:var(--mut)">Live motion</span><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
+
+<section class="view" id="v-wallpapers" aria-labelledby="hw"><div class="eb">Wallpapers</div><h1 id="hw">Motion that respects your PC.</h1>
+<p class="lede">Live wallpapers run in a locked box: they can draw, but they cannot reach the internet, your files or your widgets. They pause by themselves during games, on low battery and in remote sessions.</p>
+<div class="drop"><div><b>Add your own video</b><div style="color:var(--mut);font-size:.8125rem">Drag an .mp4, .webm or .m4v file onto this window. Plinth keeps its own copy; your original is never changed.</div></div><div class="row"><button class="btn g" id="wfolder">Open folder</button><button class="btn g" id="wscan">Rescan</button></div></div>
+<div class="wgrid" id="wgrid" role="radiogroup" aria-label="Choose a wallpaper"></div>
+<div class="bar"><div><b id="wn">None</b> <span class="chip" id="wcost">…</span> <span class="chip ok" id="wap" hidden>Applied</span> <span class="chip warn" id="wpz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="btn g" id="rev2" disabled>Revert</button><button class="btn p" id="apply2">Apply to my desktop</button></div></div></section>
 
 <section class="view" id="v-safety" aria-labelledby="h2"><div class="eb">Safety · Permission Center</div><h1 id="h2">See everything. Revoke anything.</h1>
 <p class="lede">Widgets can only use what they declared and you allowed. Every request is logged, including the ones that were blocked.</p>
@@ -79,18 +96,20 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <p class="lede">Pick a Scene, press Apply, and your desktop gets a wallpaper and widgets that can only do what you allow. Press Revert any time.</p>
 <div style="display:grid;gap:10px;margin:22px 0"><div class="row"><span class="chip ok">Allowed</span><span>Built-in clock, system monitor and notes (read-only numbers, nothing leaves your PC)</span></div><div class="row"><span class="chip warn">Asks</span><span>Anything that wants the internet shows up in Safety first</span></div><div class="row"><span class="chip bad">Never</span><span>Your files, programs and keystrokes: no widget can ask for them</span></div></div>
 <div class="row between"><span></span><button class="btn p" id="frok">Got it</button></div></div></div>
+<div class="dropov" aria-hidden="true">Drop a video to add it</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v==null?'':v).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const send=(cmd,a={})=>window.ipc.postMessage(JSON.stringify({cmd,...a}));
-let S=null,open=new Set();const R={scene:null,w:null};
+let S=null,open=new Set();const R={scene:null,w:null,wall:null};
 const SC={dusk:{name:'Dusk',d:'Warm, calm, low glare',w:'linear-gradient(160deg,#2b1b4d 0%,#5b2a6b 40%,#d9667a 85%,#ffb27a 100%)',m:'radial-gradient(60% 50% at 70% 30%,rgba(255,170,120,.35),transparent 70%)',a:'#ffb27a',i:'#2a1400'},graphite:{name:'Graphite',d:'Matte, focused, no noise',w:'linear-gradient(160deg,#0d0f14 0%,#1a1e2b 55%,#2c3347 100%)',m:'radial-gradient(50% 60% at 25% 70%,rgba(124,242,200,.22),transparent 70%)',a:'#7cf2c8',i:'#04281d'},paper:{name:'Paper',d:'Light, airy, high legibility',w:'linear-gradient(160deg,#e9e4da 0%,#cfd8dc 60%,#b7c4d6 100%)',m:'radial-gradient(55% 55% at 75% 25%,rgba(255,255,255,.7),transparent 70%)',a:'#3b6cff',i:'#ffffff'}};
 function toast(t){$('#toast').textContent=t;$('#toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').classList.remove('on'),4500)}
 function show(v){$$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));$$('#nav button').forEach(b=>{b.dataset.v===v?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')})}
 $$('#nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 $('#safe').onclick=()=>send('safe',{on:!S.safe});
 $('#motion').onclick=()=>send('motion',{on:!S.motion});$('#apply').onclick=()=>{send('apply');toast('Applying…')};$('#rev').onclick=()=>send('revert');
+$('#apply2').onclick=()=>{send('apply');toast('Applying…')};$('#rev2').onclick=()=>send('revert');$('#wfolder').onclick=()=>send('wallpaper_folder');$('#wscan').onclick=()=>send('wallpaper_rescan');
 $('#frok').onclick=()=>{$('#fr').classList.remove('on');send('firstrun_done')};
 function render(){
   const sc=SC[S.scene],r=document.documentElement.style;r.setProperty('--wall',sc.w);r.setProperty('--mid',sc.m);r.setProperty('--accent',sc.a);r.setProperty('--ink',sc.i);
@@ -106,8 +125,21 @@ function render(){
   const lg=$('#log');lg.innerHTML=S.activity.map(a=>`<div><small>#${esc(a.seq)}</small><span><b>${esc(a.widget)}</b> ${esc(a.action)}</span><span class="${a.allowed?'ok':'no'}">${a.allowed?'allowed':'blocked'}</span></div>`).join('')||'<div><span></span><span>No activity yet. Apply a Scene to start the widgets.</span><span></span></div>';
   $('#dest').innerHTML=S.destinations.length?S.destinations.map(d=>`<div class="row"><span class="chip ok">Allowed</span><span>${esc(d)}</span></div>`).join(''):'<div class="row"><span class="chip">None</span><span>No widget has permission to use the internet.</span></div>';
   $('#pc').textContent=`${S.proxy.length} attempts`;$('#plog').innerHTML=S.proxy.map(e=>`<div><small>#${esc(e.seq)}</small><span>${esc(e.method)} ${esc(e.target)}</span><span class="${e.verdict==='Allow'?'ok':'no'}">${e.verdict==='Allow'?'allowed':'blocked'}</span></div>`).join('')||'<div><span></span><span>Nothing has tried to leave your PC.</span><span></span></div>';
+  const wk2=JSON.stringify([S.wallpapers,S.wallpaper]);
+  if(R.wall!==wk2){R.wall=wk2;const g=$('#wgrid');g.innerHTML='';
+    const icon={web:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',video:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>'};
+    const add=(id,name,sub,cls,ic,rm)=>{const b=document.createElement('div');b.className='wcard';b.setAttribute('role','radio');b.tabIndex=0;b.setAttribute('aria-checked',id===S.wallpaper);
+      b.innerHTML=`<div class="th ${cls}">${ic}</div><div class="mt2"><b>${esc(name)}</b><br><small>${esc(sub)}</small></div>`;
+      const pick=()=>send('wallpaper',{id});b.onclick=pick;b.onkeydown=(e)=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick()}};
+      if(rm){const x=document.createElement('button');x.className='wrm';x.textContent='Remove';x.setAttribute('aria-label','Remove '+name);x.onclick=(e)=>{e.stopPropagation();if(confirm('Remove '+name+' from Plinth? Your original video file is not touched.'))send('wallpaper_remove',{id})};b.append(x)}
+      g.append(b)};
+    add('','Scene background','Gradient, no motion','n','',false);
+    S.wallpapers.forEach(w=>add(w.id,w.name,(w.kind==='video'?'Video':'Animated page')+(w.bundled?' · Plinth':' · Yours'),w.kind==='video'?'v':'',icon[w.kind]||'',!w.bundled))}
+  const cw=S.wallpapers.find(w=>w.id===S.wallpaper);
+  $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
   if(S.firstRun)$('#fr').classList.add('on');
 }
+window.__drop=(on)=>document.body.classList.toggle('dropping',!!on);
 window.__onState=(s)=>{const prev=S;S=s;render();if(prev&&s.msg)toast(s.msg)};
 setInterval(()=>{const d=new Date();$('#pt').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},5000);
 setInterval(()=>send('state'),4000);

@@ -28,6 +28,21 @@ pub const ISOLATED_WIDGET: Impact = Impact { ram_mb: 29.0, cpu_pct: 0.2 };
 /// Extra cost of a bundled first-party widget sharing the trusted origin (Spike B: about 2.5 MB each).
 pub const SHARED_WIDGET: Impact = Impact { ram_mb: 5.0, cpu_pct: 0.1 };
 
+/// Extra cost of a live wallpaper while the desktop is visible, measured with `scripts/measure-wallpapers.ps1` (release build,
+/// 1080p, one machine, 20 s per run, CPU of the app's process tree only, GPU load not measured). Against a static baseline of
+/// 301.7 MB / 0.70%: Aurora +40 MB / +2.6%, Starfield +50 MB / +6.8%, Embers +145 MB / +7.2% (web wallpapers; a typical value is
+/// used), a 1080p30 H.264 video +90 MB / +2.6%. When other windows cover the desktop the CPU cost is about 0 and the memory
+/// cost mostly stays (video +30 MB, web about 0 because the page is paused by the browser engine).
+pub const WEB_WALLPAPER_EXTRA: Impact = Impact { ram_mb: 100.0, cpu_pct: 5.0 };
+pub const VIDEO_WALLPAPER_EXTRA: Impact = Impact { ram_mb: 90.0, cpu_pct: 2.6 };
+
+pub fn wallpaper_extra(kind: crate::wallpaper::WallpaperKind) -> Impact {
+    match kind {
+        crate::wallpaper::WallpaperKind::Web => WEB_WALLPAPER_EXTRA,
+        crate::wallpaper::WallpaperKind::Video => VIDEO_WALLPAPER_EXTRA,
+    }
+}
+
 pub fn total(parts: &[Impact]) -> Impact {
     parts.iter().fold(Impact { ram_mb: 0.0, cpu_pct: 0.0 }, |a, b| Impact { ram_mb: a.ram_mb + b.ram_mb, cpu_pct: a.cpu_pct + b.cpu_pct })
 }
@@ -63,6 +78,13 @@ pub fn scene_cost_with_motion(shared: usize, isolated: usize, motion: bool) -> I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wallpaper_costs_are_heavier_than_widgets() {
+        use crate::wallpaper::WallpaperKind::*;
+        assert_eq!(rate(&wallpaper_extra(Web)), Rating::Heavy);
+        assert!(wallpaper_extra(Video).cpu_pct < wallpaper_extra(Web).cpu_pct);
+    }
 
     #[test]
     fn ratings_follow_thresholds() {
