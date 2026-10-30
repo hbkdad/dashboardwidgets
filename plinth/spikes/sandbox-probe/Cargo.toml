@@ -1,0 +1,10 @@
+[package]
+name = "sandbox-probe"
+description = "Spike C: hostile-widget attacks against sandboxed iframes in WebView2 (wry). Local test server only; no external hosts."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+tao = "0.37.2"
+wry = "0.57.1"

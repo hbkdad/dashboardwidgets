@@ -1,0 +1,10 @@
+[package]
+name = "webview-probe"
+description = "Spike A+B: WebView2 (wry) host on the desktop layer; Win+D pixel test and RAM measurement. Windows only."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+raw-window-handle = "0.6.2"
+wry = "0.57.1"

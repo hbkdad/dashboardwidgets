@@ -1,0 +1,22 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / UI (future hub)
+node_modules/
+dist/
+
+# WebView2 user-data folders created next to spike executables
+*.WebView2/
+**/*.exe.WebView2/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local scratch
+/tmp/
+*.log

@@ -1,0 +1,8 @@
+[package]
+name = "layer-probe"
+description = "Spike A: desktop-layer attach strategies and Show-Desktop (Win+D) visibility probe. Windows only, no dependencies."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]

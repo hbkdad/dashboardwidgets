@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "id": "test.hostile-widget",
+  "name": "Hostile test widget (sandbox test fixture only)",
+  "version": "0.0.1",
+  "type": "widget",
+  "permissions": [
+    { "id": "system.cpu", "reason": "Declared so we can test granted vs undeclared behavior" },
+    { "id": "net.fetch", "hosts": ["localhost.test"], "reason": "Only the local test server may be reachable" }
+  ],
+  "notes": "Spike C will attempt, from widget JS: read a scratch file, spawn a process, fetch an undeclared host, read another widget's storage, bypass CSP. Every attempt must be blocked and logged. No real hosts or data."
+}
