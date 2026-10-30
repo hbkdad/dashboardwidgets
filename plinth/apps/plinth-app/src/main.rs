@@ -22,7 +22,9 @@ use plinth_host::{Host, Package, WallpaperStore, WALLPAPER_SCHEME};
 use plinth_proxy::{Dest, Log, Policy, Verdict};
 use serde_json::{json, Value};
 use library::Library;
+use plinth_core::context::{self as ctxmod, Context, Engine, Learner, Suggestion};
 use plinth_core::fit::{self, FitMode};
+use plinth_core::setup::{self as cardmod, SetupCard};
 use plinth_core::library::{self as corelib, Filter};
 use plinth_core::monitors::{self as mons, MonitorInfo, Resolved};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -65,6 +67,7 @@ enum Ev {
     OsDone(String),
     Picked { purpose: String, path: Option<String> },
     SlideTick,
+    Context(Context),
     DropHover(bool),
     Auto(u8),
 }
@@ -131,6 +134,12 @@ struct App {
     /// Composed picture file per monitor id (static image wallpapers), ready for the layer to draw.
     composed: HashMap<String, String>,
     slide_due: HashMap<String, u64>,
+    engine: Engine,
+    learner: Learner,
+    last_ctx: Context,
+    suggestion: Option<Suggestion>,
+    mood_current: String,
+    pending_card: Option<SetupCard>,
 }
 
 impl App {
@@ -214,7 +223,29 @@ impl App {
         };
         let lib_sel: Vec<Value> = self.st.lib_sel.iter().map(|(m, x)| json!({ "monitor": m, "key": x.key, "name": lib_names.get(&x.key).cloned().unwrap_or_default(), "fit": x.fit, "bg": x.bg })).collect();
         let slides: Vec<Value> = self.st.slides.iter().map(|(m, x)| json!({ "monitor": m, "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter })).collect();
-        json!({ "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        let moods = json!({ "on": self.st.moods_on, "current": self.mood_current,
+            "rules": self.st.mood_rules.iter().map(|r| json!({ "name": r.name, "text": ctxmod::describe(&r.when), "profile": r.scene, "exists": self.st.profiles.contains_key(&r.scene) })).collect::<Vec<_>>(),
+            "suggestion": self.suggestion.as_ref().map(|s| json!({ "text": ctxmod::describe(&s.when), "profile": s.scene })),
+            "now": { "app": self.last_ctx.foreground_app, "minute": self.last_ctx.minute_of_day } });
+        let card_json = self.pending_card.as_ref().map(|c| {
+            let info = self.host.lock().unwrap().describe();
+            let mut perms: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+            let mut hosts: std::collections::BTreeSet<String> = Default::default();
+            let mut missing: Vec<String> = Vec::new();
+            for cp in &c.widgets {
+                match info.iter().find(|w| w.id == cp.widget) {
+                    None => missing.push(format!("{} {}", cp.widget, cp.version)),
+                    Some(w) => {
+                        for p in &w.permissions {
+                            perms.entry(permission_label(p.id).to_string()).or_default().push(w.name.clone());
+                            hosts.extend(p.hosts.iter().cloned());
+                        }
+                    }
+                }
+            }
+            json!({ "name": c.name, "author": c.author, "scene": c.scene, "widgets": c.widgets.len(), "monitors": c.widgets.iter().map(|p| p.monitor).max().map_or(1, |m| m as usize + 1), "missing": missing, "permissions": perms, "hosts": hosts, "haveMonitors": self.monitors.len() })
+        });
+        json!({ "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
     }
@@ -602,6 +633,27 @@ fn gc_composed(app: &App) {
     }
 }
 
+/// Read and show a setup card. Cards never contain code or grant anything; they name widgets and places.
+fn load_card(app: &mut App, path: &str) -> String {
+    let p = std::path::Path::new(path);
+    if !p.extension().map_or(false, |e| e.eq_ignore_ascii_case("plinthcard") || e.eq_ignore_ascii_case("json")) {
+        return "That is not a Plinth setup card.".into();
+    }
+    match std::fs::metadata(p) {
+        Ok(m) if m.len() <= 256 * 1024 => {}
+        _ => return "That file is missing or too large to be a setup card.".into(),
+    }
+    let Ok(text) = std::fs::read_to_string(p) else { return "Plinth could not read that file.".into() };
+    match SetupCard::parse(text.trim_start_matches('\u{feff}')) {
+        Ok(card) => {
+            let name = card.name.clone();
+            app.pending_card = Some(card);
+            format!("Review \"{name}\" below before applying it.")
+        }
+        Err(e) => format!("That card is not valid ({e:?})."),
+    }
+}
+
 fn current_monitors(fake: &Arc<Mutex<Option<String>>>) -> Vec<MonitorInfo> {
     match fake.lock().unwrap().clone() {
         Some(spec) => mon::parse_fake(&spec),
@@ -712,10 +764,11 @@ fn main() {
     st.first_run = st.first_run && autotest.is_none();
     let walls = Arc::new(Mutex::new(WallpaperStore::new(wallpapers_dir(), user_wallpapers_dir())));
     println!("wallpapers: {} found", walls.lock().unwrap().list().len());
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new() };
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new(), engine: Engine::new(Vec::new(), 120), learner: Learner::new(3), last_ctx: Context::default(), suggestion: None, mood_current: String::new(), pending_card: None };
     app.monitors = current_monitors(&app.fake);
     println!("monitors: {}", app.monitors.iter().map(|m| format!("{} {}x{} at {},{} {}%{}", m.name, m.width_px, m.height_px, m.x, m.y, m.scale_percent(), if m.primary { " primary" } else { "" })).collect::<Vec<_>>().join(" | "));
     app.recompute();
+    app.engine = Engine::new(app.st.mood_rules.clone(), 120);
     if app.walls.lock().unwrap().get(&app.st.wallpaper).is_none() {
         app.st.wallpaper.clear(); // the chosen wallpaper was removed or is broken: fall back to the Scene gradient
     }
@@ -738,7 +791,7 @@ fn main() {
     println!("library: {n_items} items, {n_roots} folders");
     let hub_window = WindowBuilder::new().with_title("Plinth").with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0)).build(&event_loop).unwrap();
     let hub_id = hub_window.id();
-    let mut hub_ctx = WebContext::new(Some(state::local_dir().join("wv-hub")));
+    let mut hub_ctx = WebContext::new(Some(state::webview_dir().join("wv-hub")));
     let mut hub_view: Option<WebView> = Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx));
     // Tray icon + menu (background mode: closing the hub hides it; Quit in the tray exits).
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -765,7 +818,7 @@ fn main() {
             }
         }));
     }
-    let mut layer_ctx = WebContext::new(Some(state::local_dir().join("wv-layer")));
+    let mut layer_ctx = WebContext::new(Some(state::webview_dir().join("wv-layer")));
     let mut layers: HashMap<String, Layer> = HashMap::new();
     let mut identify: Vec<(Window, WebView)> = Vec::new();
 
@@ -872,6 +925,21 @@ fn main() {
             let _ = p2.send_event(Ev::SlideTick);
         });
     }
+    {
+        // Context sampler for Moods: every 5 s read the foreground program, fullscreen and battery state, and the time. Cheap (a few
+        // window and process calls); the decisions are plinth-core's tested engine.
+        let p = proxy.clone();
+        let own = autotest.is_some();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(5));
+            if std::env::var_os("PLINTH_AUTOTEST_MOODS").is_some() {
+                continue; // the Moods test feeds its own contexts; real ones would mix in
+            }
+            let st = win::system_state(own);
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            let _ = p.send_event(Ev::Context(Context { foreground_app: win::foreground_app(), fullscreen: st.fullscreen_app, on_battery: st.on_battery, minute_of_day: win::minute_of_day(), now_secs: now }));
+        });
+    }
     let tick = proxy.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(30));
@@ -884,6 +952,57 @@ fn main() {
                 let _ = p.send_event(Ev::Hub(j.to_string()));
             };
             let nap = |s: u64| std::thread::sleep(Duration::from_secs(s));
+            if std::env::var_os("PLINTH_AUTOTEST_MOODS").is_some() {
+                let cards = std::env::var("PLINTH_CARDS").unwrap_or_default();
+                let ctx = |app: &str, fs: bool, now: u64| Context { foreground_app: app.into(), fullscreen: fs, on_battery: false, minute_of_day: 600, now_secs: now };
+                nap(2);
+                hub(&p, r#"{"cmd":"apply"}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"profile_save","name":"Day"}"#);
+                hub(&p, r#"{"cmd":"scene","id":"dusk"}"#);
+                hub(&p, r#"{"cmd":"profile_save","name":"Night"}"#);
+                hub(&p, r#"{"cmd":"scene","id":"graphite"}"#);
+                hub(&p, r#"{"cmd":"moods_toggle","on":true}"#);
+                hub(&p, r#"{"cmd":"mood_add","rule":{"name":"Code","when":{"kind":"app","value":"code.exe"},"profile":"Night"}}"#);
+                hub(&p, r#"{"cmd":"mood_add","rule":{"name":"Bad","when":{"kind":"app","value":"..\\x.exe"},"profile":"Night"}}"#); // must be refused
+                nap(1);
+                let _ = p.send_event(Ev::Context(ctx("code.exe", false, 1000)));
+                nap(2);
+                let _ = p.send_event(Ev::Auto(50)); // the rule switched to Night (dusk)
+                hub(&p, r#"{"cmd":"profile_apply","name":"Day"}"#); // the user disagrees, by hand
+                nap(1);
+                let _ = p.send_event(Ev::Context(ctx("code.exe", false, 2000)));
+                nap(2);
+                let _ = p.send_event(Ev::Auto(51)); // automation stood down: still Day (graphite)
+                let _ = p.send_event(Ev::Context(ctx("notepad.exe", false, 3000)));
+                let _ = p.send_event(Ev::Context(ctx("code.exe", false, 4000)));
+                nap(2);
+                let _ = p.send_event(Ev::Auto(52)); // context changed and came back: the rule applies again (dusk)
+                let _ = p.send_event(Ev::Context(ctx("notepad.exe", false, 5000)));
+                nap(1);
+                for _ in 0..3 {
+                    hub(&p, r#"{"cmd":"profile_apply","name":"Day"}"#);
+                    nap(1);
+                }
+                let _ = p.send_event(Ev::Auto(53)); // three identical manual choices: a rule is suggested (not created)
+                hub(&p, r#"{"cmd":"mood_accept"}"#);
+                nap(1);
+                let _ = p.send_event(Ev::Auto(54)); // the suggestion became a rule
+                hub(&p, r#"{"cmd":"scene","id":"paper"}"#);
+                hub(&p, r#"{"cmd":"card_export","name":"Test Rig"}"#);
+                nap(1);
+                let file = std::path::Path::new(&cards).join("test-rig.plinthcard");
+                hub(&p, &json!({ "cmd": "card_load", "path": file.to_string_lossy() }).to_string());
+                hub(&p, &json!({ "cmd": "card_load", "path": file.with_extension("exe").to_string_lossy() }).to_string()); // refused
+                nap(1);
+                let _ = p.send_event(Ev::Auto(55)); // a card is waiting for review
+                hub(&p, r#"{"cmd":"scene","id":"dusk"}"#);
+                hub(&p, r#"{"cmd":"card_apply"}"#);
+                nap(2);
+                let _ = p.send_event(Ev::Auto(56)); // applied: scene back to paper, undo available
+                let _ = p.send_event(Ev::Auto(57));
+                return;
+            }
             if let Some(dir) = std::env::var_os("PLINTH_AUTOTEST_LIB") {
                 // Library end to end on the real monitors: add a folder, scan, pick a picture (composed and set as the OS wallpaper),
                 // watch a new file appear, run the slideshow, then Revert and check the OS wallpaper is exactly as before.
@@ -995,6 +1114,7 @@ fn main() {
     let _ = &sec_last;
     let mut mon_snaps: Vec<MonSnap> = Vec::new();
     let mut lp = LibProbe::default();
+    let mut mood_snaps: Vec<(String, String, bool, usize, bool, bool)> = Vec::new();
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
     let mut applied_before_start = app.st.applied;
@@ -1201,6 +1321,15 @@ fn main() {
                     }
                     "profile_apply" => {
                         let name = v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                        if !v.get("auto").and_then(Value::as_bool).unwrap_or(false) && app.st.profiles.contains_key(&name) {
+                            app.engine.manual_switch(&name, &app.last_ctx);
+                            app.mood_current = name.clone();
+                            if app.st.moods_on {
+                                if let Some(sg) = app.learner.record_manual(&app.last_ctx, &name) {
+                                    app.suggestion = Some(sg);
+                                }
+                            }
+                        }
                         if let Some(p) = app.st.profiles.get(&name).cloned() {
                             if let Some(sc) = p.get("scene").and_then(Value::as_str) {
                                 app.st.scene = scene(sc).id.to_string();
@@ -1251,6 +1380,108 @@ fn main() {
                             msg = Some("Copy removed.".into());
                         } else {
                             msg = Some("The original widget stays; remove its copies only.".into());
+                        }
+                    }
+                    "moods_toggle" => {
+                        app.st.moods_on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+                        msg = Some(if app.st.moods_on { "Moods on. Plinth switches profiles by your rules, and never fights a choice you make by hand.".into() } else { "Moods off.".into() });
+                    }
+                    "mood_add" => match ctxmod::rule_from_json(v.get("rule").unwrap_or(&Value::Null)) {
+                        Ok(r) if !app.st.profiles.contains_key(&r.scene) => msg = Some("Save that profile first (Wallpapers, Profiles), then use it in a rule.".into()),
+                        Ok(_) if app.st.mood_rules.len() >= 32 => msg = Some("That is the most rules Plinth keeps (32).".into()),
+                        Ok(r) => {
+                            app.st.mood_rules.retain(|x| x.name != r.name);
+                            app.st.mood_rules.push(r);
+                            app.engine = Engine::new(app.st.mood_rules.clone(), 120);
+                            msg = Some("Rule saved. Earlier rules win when several match.".into());
+                        }
+                        Err(e) => msg = Some(e),
+                    },
+                    "mood_remove" => {
+                        let name = v.get("name").and_then(Value::as_str).unwrap_or("");
+                        app.st.mood_rules.retain(|x| x.name != name);
+                        app.engine = Engine::new(app.st.mood_rules.clone(), 120);
+                    }
+                    "mood_accept" => {
+                        if let Some(sg) = app.suggestion.take() {
+                            let name = format!("Auto: {}", sg.scene);
+                            app.st.mood_rules.retain(|x| x.name != name);
+                            app.st.mood_rules.push(ctxmod::Rule { name, when: sg.when, scene: sg.scene });
+                            app.engine = Engine::new(app.st.mood_rules.clone(), 120);
+                            msg = Some("Rule added from what you do by hand.".into());
+                        }
+                    }
+                    "mood_dismiss" => {
+                        if let Some(sg) = app.suggestion.take() {
+                            app.learner.dismiss(&app.last_ctx, &sg.scene);
+                        }
+                    }
+                    "card_export" => {
+                        let name = v.get("name").and_then(Value::as_str).unwrap_or("My setup").to_string();
+                        let info = app.host.lock().unwrap().describe();
+                        let mut items = Vec::new();
+                        for r in &app.resolved {
+                            if r.widget.contains('#') {
+                                continue; // copies are a local choice; a card lists each widget once
+                            }
+                            let (Some(w), Some(mi)) = (info.iter().find(|w| w.id == r.widget), app.monitors.iter().position(|m| m.id == r.monitor)) else { continue };
+                            items.push(cardmod::ExportItem { widget: w.id.clone(), version: w.version.clone(), monitor: mi.min(7) as u8, x: r.x, y: r.y, w: r.w, h: r.h });
+                        }
+                        let sizes: Vec<(f32, f32)> = app.monitors.iter().map(|m| m.size_dip()).collect();
+                        let author = std::env::var("USERNAME").unwrap_or_else(|_| "Me".into());
+                        match SetupCard::export(&name, &author, &app.st.scene, None, &sizes, &items) {
+                            Ok(card) => {
+                                let dir = std::env::var_os("PLINTH_CARDS").map(PathBuf::from).unwrap_or_else(|| std::env::var_os("USERPROFILE").map(|u| PathBuf::from(u).join("Documents").join("Plinth").join("Cards")).unwrap_or_else(std::env::temp_dir));
+                                let _ = std::fs::create_dir_all(&dir);
+                                let file = dir.join(format!("{}.plinthcard", card.id.trim_start_matches("local.")));
+                                if std::fs::write(&file, card.to_json()).is_ok() {
+                                    if std::env::var_os("PLINTH_CARDS").is_none() {
+                                        let _ = std::process::Command::new("explorer.exe").arg(format!("/select,{}", file.display())).spawn();
+                                    }
+                                    msg = Some(format!("Saved {}. It holds no personal data, only your scene and widget places.", file.display()));
+                                } else {
+                                    msg = Some("Plinth could not write the card file.".into());
+                                }
+                            }
+                            Err(_) => msg = Some("Nothing to export yet: apply a scene with widgets first.".into()),
+                        }
+                    }
+                    "card_load" => {
+                        // Read a card file chosen or dropped by the user; show what it would do before anything changes.
+                        let path = v.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+                        msg = Some(load_card(&mut app, &path));
+                    }
+                    "card_pick" => {
+                        let (p, owner) = (proxy.clone(), hub_window.hwnd() as isize);
+                        std::thread::spawn(move || {
+                            let path = os_wall::pick_kind(false, true, owner);
+                            let _ = p.send_event(Ev::Picked { purpose: "card".into(), path });
+                        });
+                    }
+                    "card_cancel" => app.pending_card = None,
+                    "card_apply" => {
+                        if let Some(card) = app.pending_card.take() {
+                            app.undo_placements = Some(app.st.placements.clone());
+                            let installed: Vec<String> = app.host.lock().unwrap().describe().into_iter().map(|w| w.id).collect();
+                            let mut applied = 0;
+                            for cp in &card.widgets {
+                                if !installed.contains(&cp.widget) {
+                                    continue;
+                                }
+                                let mon = app.monitors.get(cp.monitor as usize).or_else(|| app.monitors.iter().find(|m| m.primary)).cloned();
+                                let Some(m) = mon else { continue };
+                                let (mw, mh) = m.size_dip();
+                                let g = cardmod::GRID as f32;
+                                let pl = plinth_core::monitors::Placement { widget: cp.widget.clone(), home: if m.primary { mons::ROLE_PRIMARY.to_string() } else { m.id.clone() }, home_fingerprint: m.fingerprint.clone(), anchor: mons::Anchor::TopLeft, dx: cp.x as f32 / g * mw, dy: cp.y as f32 / g * mh, w: (cp.w as f32 / g * mw).max(96.0), h: (cp.h as f32 / g * mh).max(96.0) };
+                                app.st.placements.retain(|p| p.widget != cp.widget);
+                                app.st.placements.push(pl);
+                                applied += 1;
+                            }
+                            app.st.scene = scene(&card.scene).id.to_string();
+                            app.park_all = false;
+                            reload = true;
+                            relayout = true;
+                            msg = Some(format!("Applied \"{}\": {applied} widget(s) placed. Nothing was granted; check Safety for permissions. Undo is in Monitors.", card.name));
                         }
                     }
                     "assign" => {
@@ -1480,6 +1711,12 @@ fn main() {
             Event::UserEvent(Ev::Drop(paths)) => {
                 let (mut added, mut last_id, mut err) = (0, None, None);
                 for p in paths.iter().take(8) {
+                    if p.extension().map_or(false, |e| e.eq_ignore_ascii_case("plinthcard")) {
+                        let m = load_card(&mut app, &p.to_string_lossy());
+                        println!("hub: card dropped: {m}");
+                        err = Some(m);
+                        continue;
+                    }
                     if p.is_dir() {
                         let r = app.lib.lock().unwrap().add_root(&p.to_string_lossy());
                         LIB_RESCAN.store(true, Ordering::Relaxed);
@@ -1562,7 +1799,9 @@ fn main() {
             }
             Event::UserEvent(Ev::Picked { purpose, path }) => {
                 if let Some(p) = path {
-                    let msg = if purpose == "folder" {
+                    let msg = if purpose == "card" {
+                        load_card(&mut app, &p)
+                    } else if purpose == "folder" {
                         let r = app.lib.lock().unwrap().add_root(&p);
                         LIB_RESCAN.store(true, Ordering::Relaxed);
                         r.err().unwrap_or_else(|| "Folder added. Plinth is reading its pictures now.".into())
@@ -1577,6 +1816,18 @@ fn main() {
                         String::new()
                     };
                     reply(&app, &hub_view, Some(&msg));
+                }
+            }
+            Event::UserEvent(Ev::Context(c)) => {
+                app.last_ctx = c.clone();
+                if app.st.moods_on && !app.st.safe && !app.paused {
+                    if let Some(profile) = app.engine.evaluate(&c) {
+                        if app.st.profiles.contains_key(&profile) {
+                            println!("mood: switching to profile {profile}");
+                            app.mood_current = profile.clone();
+                            let _ = proxy.send_event(Ev::Hub(json!({ "cmd": "profile_apply", "name": profile, "auto": true }).to_string()));
+                        }
+                    }
                 }
             }
             Event::UserEvent(Ev::SlideTick) => {
@@ -1654,6 +1905,12 @@ fn main() {
                     }
                 }
                 21..=25 | 27..=29 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                50..=56 => mood_snaps.push((app.st.scene.clone(), app.mood_current.clone(), app.suggestion.is_some(), app.st.mood_rules.len(), app.pending_card.is_some(), app.undo_placements.is_some())),
+                57 => {
+                    let code = mood_report(&app, &mood_snaps);
+                    app.persist();
+                    std::process::exit(code);
+                }
                 40 => lp.before = os_wall::snapshot().ok(),
                 41 => {
                     lp.summary1 = Some(app.lib.lock().unwrap().summary());
@@ -1770,6 +2027,37 @@ fn library_report(p: &LibProbe) -> i32 {
         ("the slideshow moved to a different picture", p.key_before_slide.is_some() && p.key_after_slide.is_some() && p.key_before_slide != p.key_after_slide),
         ("Revert put every monitor's wallpaper back exactly as it was", p.before.is_some() && p.before.as_ref().map(|b| &b.wallpapers) == p.after.as_ref().map(|a| &a.wallpapers)),
         ("Revert cleared the saved snapshot", p.snapshot_cleared),
+    ];
+    let mut failed = 0;
+    for (n, ok) in &checks {
+        println!("[{}] {n}", if *ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed += 1;
+        }
+    }
+    println!("\n{} of {} checks passed", checks.len() - failed, checks.len());
+    i32::from(failed != 0)
+}
+
+/// Snapshots: (scene, current mood, suggestion pending, rule count, card pending, can undo) at steps 50 to 56.
+fn mood_report(app: &App, snaps: &[(String, String, bool, usize, bool, bool)]) -> i32 {
+    println!("\n===== Moods and setup cards =====");
+    for (i, s) in snaps.iter().enumerate() {
+        println!("   step {}: scene {} mood '{}' suggestion {} rules {} card pending {} undo {}", 50 + i, s.0, s.1, s.2, s.3, s.4, s.5);
+    }
+    let g = |i: usize| snaps.get(i);
+    let checks: Vec<(&str, bool)> = vec![
+        ("all seven snapshots were taken", snaps.len() == 7),
+        ("a rule was added and a malformed one (path in the program name) was refused", g(0).map_or(false, |s| s.3 == 1)),
+        ("when I use code.exe the rule switched to the Night profile (dusk)", g(0).map_or(false, |s| s.0 == "dusk" && s.1 == "Night")),
+        ("after I chose Day by hand in the same situation, the rule did not fight me", g(1).map_or(false, |s| s.0 == "graphite" && s.1 == "Day")),
+        ("changing situation and coming back applies the rule again", g(2).map_or(false, |s| s.0 == "dusk")),
+        ("three identical manual choices produced a suggestion, not a rule", g(3).map_or(false, |s| s.2 && s.3 == 1)),
+        ("accepting the suggestion created exactly one new rule", g(4).map_or(false, |s| !s.2 && s.3 == 2)),
+        ("an exported setup card was read back and is waiting for review (a non-card file was refused)", g(5).map_or(false, |s| s.4)),
+        ("applying the card restored its scene, cleared the review and made Undo available", g(6).map_or(false, |s| s.0 == "paper" && !s.4 && s.5)),
+        ("the card file holds no hardware ids", std::env::var("PLINTH_CARDS").ok().and_then(|d| std::fs::read_to_string(std::path::Path::new(&d).join("test-rig.plinthcard")).ok()).map_or(false, |t| !t.to_ascii_lowercase().contains("display#") && t.contains("\"format\": 1"))),
+        ("the saved state keeps the rules", app.st.mood_rules.len() == 2),
     ];
     let mut failed = 0;
     for (n, ok) in &checks {

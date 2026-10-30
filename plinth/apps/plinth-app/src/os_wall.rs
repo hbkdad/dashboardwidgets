@@ -129,6 +129,11 @@ pub fn restore(snap: &Snapshot) -> Result<(), String> {
 
 /// Native folder or image picker. Returns None when the user cancels. Runs on the calling thread (call it from a worker).
 pub fn pick(folder: bool, owner: isize) -> Option<String> {
+    pick_kind(folder, false, owner)
+}
+
+/// `card` selects Plinth setup cards instead of pictures.
+pub fn pick_kind(folder: bool, card: bool, owner: isize) -> Option<String> {
     let _c = Com::new().ok()?;
     unsafe {
         let d: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL).ok()?;
@@ -138,7 +143,7 @@ pub fn pick(folder: bool, owner: isize) -> Option<String> {
         }
         d.SetOptions(o).ok()?;
         if !folder {
-            let spec = [COMDLG_FILTERSPEC { pszName: w!("Images"), pszSpec: w!("*.jpg;*.jpeg;*.png;*.webp;*.bmp") }];
+            let spec = if card { [COMDLG_FILTERSPEC { pszName: w!("Plinth setup cards"), pszSpec: w!("*.plinthcard;*.json") }] } else { [COMDLG_FILTERSPEC { pszName: w!("Images"), pszSpec: w!("*.jpg;*.jpeg;*.png;*.webp;*.bmp") }] };
             d.SetFileTypes(&spec).ok()?;
         }
         d.Show(Some(HWND(owner as *mut _))).ok()?;

@@ -155,6 +155,79 @@ impl Learner {
     }
 }
 
+/// Parse "HH:MM" into minutes since midnight.
+pub fn parse_hhmm(s: &str) -> Option<u16> {
+    let (h, m) = s.trim().split_once(':')?;
+    let (h, m): (u16, u16) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60).then_some(h * 60 + m)
+}
+
+pub fn fmt_hhmm(m: u16) -> String {
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+fn valid_exe(a: &str) -> bool {
+    !a.is_empty() && a.len() <= 64 && a.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b' ' | b'(' | b')'))
+}
+
+/// Rules are stored and exchanged as small JSON objects:
+/// `{"name":"Coding","when":{"kind":"app","value":"code.exe"},"profile":"Work"}`; kinds: app, fullscreen, battery, time (from, to as HH:MM).
+/// Anything malformed is rejected, never guessed.
+pub fn rule_from_json(v: &serde_json::Value) -> Result<Rule, String> {
+    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    if name.is_empty() || name.chars().count() > 40 || name.chars().any(|c| c.is_control()) {
+        return Err("The rule needs a short name.".into());
+    }
+    let profile = v.get("profile").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    if profile.is_empty() || profile.chars().count() > 40 || profile.chars().any(|c| c.is_control()) {
+        return Err("Choose a profile for the rule.".into());
+    }
+    let w = v.get("when").ok_or("The rule needs a condition.")?;
+    let when = match w.get("kind").and_then(|x| x.as_str()).unwrap_or("") {
+        "app" => {
+            let a = w.get("value").and_then(|x| x.as_str()).unwrap_or("").trim();
+            if !valid_exe(a) {
+                return Err("Type the program's file name, for example code.exe.".into());
+            }
+            Condition::AppForeground(a.to_string())
+        }
+        "fullscreen" => Condition::Fullscreen,
+        "battery" => Condition::OnBattery,
+        "time" => {
+            let (f, t) = (w.get("from").and_then(|x| x.as_str()).and_then(parse_hhmm), w.get("to").and_then(|x| x.as_str()).and_then(parse_hhmm));
+            match (f, t) {
+                (Some(from), Some(to)) if from != to => Condition::TimeBetween { from, to },
+                _ => return Err("Use two different times like 22:00 and 06:00.".into()),
+            }
+        }
+        _ => return Err("Unknown condition.".into()),
+    };
+    Ok(Rule { name, when, scene: profile })
+}
+
+pub fn rule_to_json(r: &Rule) -> serde_json::Value {
+    let when = match &r.when {
+        Condition::AppForeground(a) => serde_json::json!({ "kind": "app", "value": a }),
+        Condition::Fullscreen => serde_json::json!({ "kind": "fullscreen" }),
+        Condition::OnBattery => serde_json::json!({ "kind": "battery" }),
+        Condition::TimeBetween { from, to } => serde_json::json!({ "kind": "time", "from": fmt_hhmm(*from), "to": fmt_hhmm(*to) }),
+        Condition::All(_) | Condition::Always => serde_json::json!({ "kind": "always" }),
+    };
+    serde_json::json!({ "name": r.name, "when": when, "profile": r.scene })
+}
+
+/// Plain-language description of a condition for the hub.
+pub fn describe(c: &Condition) -> String {
+    match c {
+        Condition::AppForeground(a) => format!("when I am using {a}"),
+        Condition::Fullscreen => "when a fullscreen app or game is open".into(),
+        Condition::OnBattery => "when on battery".into(),
+        Condition::TimeBetween { from, to } => format!("between {} and {}", fmt_hhmm(*from), fmt_hhmm(*to)),
+        Condition::All(_) => "when several things are true".into(),
+        Condition::Always => "otherwise".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +305,27 @@ mod tests {
         // nothing specific to automate
         assert_eq!(Learner::new(2).record_manual(&ctx("", false, false, 0, 0), "x"), None);
         assert_eq!(l.record_manual(&ctx("", true, false, 0, 0), "graphite"), None, "first fullscreen count");
+    }
+
+    #[test]
+    fn rules_round_trip_through_json_and_reject_junk() {
+        for r in rules().into_iter().filter(|r| !matches!(r.when, Condition::Always)) {
+            let r2 = rule_from_json(&rule_to_json(&r)).unwrap();
+            assert_eq!((r2.name.as_str(), &r2.when, r2.scene.as_str()), (r.name.as_str(), &r.when, r.scene.as_str()));
+        }
+        let bad = |j: serde_json::Value| rule_from_json(&j).is_err();
+        assert!(bad(serde_json::json!({})));
+        assert!(bad(serde_json::json!({"name":"","when":{"kind":"battery"},"profile":"P"})));
+        assert!(bad(serde_json::json!({"name":"x","when":{"kind":"battery"},"profile":""})));
+        assert!(bad(serde_json::json!({"name":"x","when":{"kind":"app","value":"..\\evil.exe"},"profile":"P"})));
+        assert!(bad(serde_json::json!({"name":"x","when":{"kind":"app","value":""},"profile":"P"})));
+        assert!(bad(serde_json::json!({"name":"x","when":{"kind":"time","from":"25:00","to":"06:00"},"profile":"P"})));
+        assert!(bad(serde_json::json!({"name":"x","when":{"kind":"time","from":"07:00","to":"07:00"},"profile":"P"})));
+        assert!(bad(serde_json::json!({"name":"x","when":{"kind":"magic"},"profile":"P"})));
+        assert_eq!(parse_hhmm("22:30"), Some(1350));
+        assert_eq!(parse_hhmm("7:5"), Some(425));
+        assert_eq!(parse_hhmm("24:00"), None);
+        assert_eq!(fmt_hhmm(1350), "22:30");
+        assert_eq!(describe(&Condition::AppForeground("code.exe".into())), "when I am using code.exe");
     }
 }

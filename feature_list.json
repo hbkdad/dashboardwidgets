@@ -132,6 +132,13 @@
       "status": "partial",
       "evidence": "library end-to-end test 10/10 on the real monitors (scan, dedupe, corrupt file, watcher, compose at exact resolution, OS wallpaper set per monitor, slideshow, exact Revert); 10,003-picture benchmark; click test 50/50",
       "missing": "directory-change notifications (polling every 5 s), hub memory at 10,000 pictures not measured, thumbnails of animated wallpapers, GPU load, per-monitor slideshow timing under battery saver untested"
+    },
+    {
+      "id": "F21",
+      "name": "Moods (automatic profile switching) and setup cards (export, review, import)",
+      "status": "partial",
+      "evidence": "Moods and cards autotest 11/11 (rule applies, stands down after a manual choice, reapplies after a context change, suggestion after 3 manual choices, accept creates one rule, card export, review, apply, undo); click test 52/52; 13 new core tests",
+      "missing": "cost of the 5 s context poll not measured; wallpapers are not part of cards; no store; Builds showcase not built"
     }
   ]
 }

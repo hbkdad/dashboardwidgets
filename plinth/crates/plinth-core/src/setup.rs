@@ -102,7 +102,71 @@ fn clean_text(s: &str) -> bool {
     !t.is_empty() && t.chars().count() <= 80 && !t.chars().any(|c| c.is_control())
 }
 
+/// One widget of the current desktop, positioned in device-independent pixels on a monitor, for export.
+pub struct ExportItem {
+    pub widget: String,
+    pub version: String,
+    /// Index of the monitor in the exporter's ordered list (0 = primary).
+    pub monitor: u8,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// A stable card id from a name: lowercase letters, digits and hyphens.
+pub fn slug_id(name: &str) -> String {
+    let mut out = String::new();
+    let mut dash = true;
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            dash = false;
+        } else if !dash {
+            out.push('-');
+            dash = true;
+        }
+    }
+    let t: String = out.trim_end_matches('-').chars().take(40).collect();
+    let t = t.trim_end_matches('-').to_string();
+    if t.is_empty() {
+        "my-setup".into()
+    } else {
+        t
+    }
+}
+
 impl SetupCard {
+    /// Build a shareable card from the current layout. It contains no monitor names, ids, paths or user data: only the scene, the
+    /// widget ids and versions, and where each widget sits as a fraction of its monitor (monitor 0 is the primary).
+    pub fn export(name: &str, author: &str, scene: &str, accent: Option<&str>, monitor_sizes_dip: &[(f32, f32)], items: &[ExportItem]) -> Result<SetupCard, SetupError> {
+        let mut widgets = Vec::new();
+        for it in items.iter().take(MAX_WIDGETS) {
+            let Some(&(mw, mh)) = monitor_sizes_dip.get(it.monitor as usize) else { continue };
+            if mw < 1.0 || mh < 1.0 {
+                continue;
+            }
+            let g = GRID as f32;
+            let w = ((it.w / mw * g).round() as u32).clamp(MIN_UNITS, GRID);
+            let h = ((it.h / mh * g).round() as u32).clamp(MIN_UNITS, GRID);
+            let x = ((it.x / mw * g).round().max(0.0) as u32).min(GRID - w);
+            let y = ((it.y / mh * g).round().max(0.0) as u32).min(GRID - h);
+            widgets.push(Placement { widget: it.widget.clone(), version: it.version.clone(), x, y, w, h, monitor: it.monitor.min(MAX_MONITORS - 1) });
+        }
+        let card = SetupCard { id: format!("local.{}", slug_id(name)), name: name.trim().to_string(), author: author.trim().to_string(), remix_of: None, scene: scene.to_string(), accent: accent.map(String::from), widgets };
+        // Round-trip through the strict parser so an exported card is always one that can be imported.
+        SetupCard::parse(&card.to_json())?;
+        Ok(card)
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(&serde_json::json!({
+            "format": SETUP_FORMAT, "id": self.id, "name": self.name, "author": self.author, "remix_of": self.remix_of, "scene": self.scene, "accent": self.accent,
+            "widgets": self.widgets.iter().map(|p| serde_json::json!({ "widget": p.widget, "version": p.version, "rect": [p.x, p.y, p.w, p.h], "monitor": p.monitor })).collect::<Vec<_>>(),
+        }))
+        .unwrap_or_default()
+    }
+
     pub fn parse(json: &str) -> Result<SetupCard, SetupError> {
         let raw: RawCard = serde_json::from_str(json).map_err(|e| SetupError::Parse(e.to_string()))?;
         if raw.format != SETUP_FORMAT {
@@ -274,5 +338,25 @@ mod tests {
         // tiny screen smaller than min size still stays inside
         let tiny = c.fit(0, 80, 60, 1.0);
         assert!(tiny.iter().all(|(_, r)| r.x + r.w <= 80 && r.y + r.h <= 60));
+    }
+
+    #[test]
+    fn export_round_trips_and_keeps_widgets_on_their_monitors() {
+        let items = vec![
+            ExportItem { widget: "com.plinth.clock".into(), version: "1.0.0".into(), monitor: 0, x: 72.0, y: 72.0, w: 360.0, h: 118.0 },
+            ExportItem { widget: "com.plinth.pcvitals".into(), version: "1.0.0".into(), monitor: 1, x: 10.0, y: 10.0, w: 400.0, h: 250.0 },
+        ];
+        let card = SetupCard::export("My Rig: night!", "Me", "dusk", Some("#ffb27a"), &[(1920.0, 1080.0), (1280.0, 400.0)], &items).unwrap();
+        assert_eq!(card.id, "local.my-rig-night");
+        let back = SetupCard::parse(&card.to_json()).unwrap();
+        assert_eq!(back, card);
+        assert_eq!((back.widgets[0].monitor, back.widgets[1].monitor), (0, 1));
+        assert!(!card.to_json().to_ascii_lowercase().contains("display#"), "no hardware ids in a shared card");
+        // a widget wider than its monitor is clamped, never rejected
+        let big = vec![ExportItem { widget: "a.b".into(), version: "1.0.0".into(), monitor: 0, x: 5000.0, y: -50.0, w: 9000.0, h: 9000.0 }];
+        let c2 = SetupCard::export("Big", "Me", "graphite", None, &[(1920.0, 1080.0)], &big).unwrap();
+        assert!(c2.widgets[0].x + c2.widgets[0].w <= GRID && c2.widgets[0].y + c2.widgets[0].h <= GRID);
+        assert!(SetupCard::export("None", "Me", "graphite", None, &[(1920.0, 1080.0)], &[]).is_err());
+        assert_eq!(slug_id("  "), "my-setup");
     }
 }

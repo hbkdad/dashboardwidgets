@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-30
+Moods and setup cards.
+### Added
+- Moods: rules that switch your saved profiles by the program you are using, a fullscreen app or game, battery, or time of day (`plinth-core::context` rule parsing with strict validation; the engine never fights a choice you make by hand, waits two minutes between switches, and the learner only suggests a rule after the same manual choice three times). The context (foreground program, fullscreen, battery, time) is sampled every 5 s. Off until you turn it on.
+- Setup cards: export your scene and widget places as a `.plinthcard` file (fractions of each monitor, widget ids and versions; no code, no monitor ids, no personal data) and import someone else's by dropping the file or choosing it; a review sheet shows missing widgets and the permissions the card's widgets could ask for, nothing is granted automatically, and Undo restores your previous places (`SetupCard::export`, strict parser round trip).
+- Hub "Moods" page; autotests: Moods and cards 11 checks; click test 52 checks; `verify.ps1 -Moods`.
+### Fixed
+- Tests could be blocked by a stuck web view profile left by an earlier run: the hub and layer web view folders can now be redirected with `PLINTH_WEBVIEW`, and the test scripts use their own.
+### Not built
+- Builds showcase (a gallery of PC builds); sharing cards through a store; applying a card's wallpapers (cards hold scene and widget places only).
+
 ## [0.10.2] - 2026-10-30
 Reliability: the intermittent click-test failures are explained and fixed.
 ### Fixed
