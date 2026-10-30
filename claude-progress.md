@@ -1,6 +1,9 @@
 # Progress log (update at the end of every work session)
 
-## State as of 2026-10-30 (v0.8.0)
+## State as of 2026-10-30 (v0.9.0)
+- v0.9.0: Security Center (read-only visibility; D30) and the wallpaper/monitor addendum design (D24-D29). Next: v0.10.0 monitors + static wallpaper library (F19, F20).
+
+## Earlier state (v0.8.0)
 - v0.8.0: wallpaper pillar. Video (.mp4/.webm/.m4v by drag and drop) and sandboxed web wallpapers (Aurora, Starfield, Embers) in the layer, pause with the governor, hub Wallpapers view, measured cost. Tests: 40 core, 24 host, 8 proxy; autotest 19/19 (with PLINTH_TEST_VIDEO); click test 33/33.
 - Not built: per-monitor targeting, wallpaper thumbnails, GPU-load measurement, web-wallpaper import UI.
 
@@ -10,7 +13,7 @@
 - Tests: 27 core, 13 host, 8 proxy.
 
 ## Next (in order)
-0. v0.8.0 shipped wallpapers. Owner addendum (2026-10-30) re-prioritised: v0.9.0 = monitors + static wallpaper library (F19, F20; design done, see PRD 5.4); v0.10.0 = Security Center, then Moods/Setup Cards import-export. Hardening before store: signature- or location-based trust instead of the `com.plinth.` id prefix.
+0. v0.8.0 shipped wallpapers. Owner asked for the Security Center first: v0.9.0 = Security Center; then v0.10.0 = monitors + static wallpaper library (F19, F20; design done, see PRD 5.4), then Moods/Setup Cards import-export. Hardening before store: signature- or location-based trust instead of the `com.plinth.` id prefix.
 1. Done in v0.6.0: hub click test via UI Automation; tray/background mode. Remaining: tray menu click test, autostart option.
 2. Close known gaps: HTTPS allow path test (local TLS server), per-widget proxy attribution, wss, lock/sleep/display/DPI, multi-monitor.
 3. Moods in the app (foreground app, fullscreen, battery probes), Setup Card import/export and 60-second try-out.

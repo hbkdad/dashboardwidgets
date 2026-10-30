@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-30
+Security Center (decision D30) plus the wallpaper/monitor addendum design (D24-D29, `research/monitors-and-wallpapers.md`).
+### Added
+- `plinth-core::security`: address classification (this PC, local network, internet), listener exposure wording, startup command-path extraction and location labels, Security Center product-state decode (5 tests).
+- `plinth-app/src/sec.rs`: read-only collectors: firewall profiles, antivirus and Defender status (one fixed PowerShell command), TCP connections and listeners per program (IP Helper API), Run-key and Startup-folder items.
+- Hub "Security" view: Scan now, Windows protection, Plinth's own activity, internet connections by program, listening ports and who can reach them, startup items. States plainly that it is visibility, not an antivirus.
+- Autotest check for the collectors (20 of 20); click test 37 of 37; XSS regression check now covers the Wallpapers and Security views.
+- Design addendum: wallpaper library and monitor selector (PRD 5.4, architecture 11-13, market gap rows 13-14, sources S42-S54).
+
 ## [0.8.0] - 2026-10-30
 Wallpaper pillar (decision D23).
 ### Added
