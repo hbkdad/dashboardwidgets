@@ -66,14 +66,15 @@ impl Host {
                 if key.is_empty() || key.len() > STORAGE_KEY_MAX {
                     return Err("bad_key".into());
                 }
+                let ns = if self.cur_ns.is_empty() { wid.to_string() } else { self.cur_ns.clone() };
                 if method == "storage.get" {
-                    return Ok(self.storage.get(wid).and_then(|m| m.get(&key)).map(|v| json!(v)).unwrap_or(Value::Null));
+                    return Ok(self.storage.get(&ns).and_then(|m| m.get(&key)).map(|v| json!(v)).unwrap_or(Value::Null));
                 }
                 let value = params.get("value").and_then(Value::as_str).ok_or("bad_value")?.to_string();
                 if value.len() > STORAGE_VALUE_MAX {
                     return Err("quota:value_too_large".into());
                 }
-                let map = self.storage.entry(wid.to_string()).or_default();
+                let map = self.storage.entry(ns).or_default();
                 let used: usize = map.iter().filter(|(k, _)| **k != key).map(|(k, v)| k.len() + v.len()).sum();
                 if used + key.len() + value.len() > STORAGE_TOTAL_MAX {
                     return Err("quota:total_exceeded".into());
@@ -305,6 +306,36 @@ mod tests {
         h.uninstall("com.plinth.a");
         assert_eq!(h.serve("pwt.localhost", "/com.plinth.a/index.html").status, 404);
         assert_eq!(h.trusted_ids(), vec!["com.plinth.b".to_string()]);
+    }
+
+    #[test]
+    fn copies_of_a_widget_share_permissions_but_not_storage() {
+        let mut h = host();
+        h.install_trusted(pkg("com.plinth.a", ALL)).unwrap();
+        h.grant("com.plinth.a", PermissionId::Storage).unwrap();
+        h.grant("com.plinth.a", PermissionId::SystemCpu).unwrap();
+        let call = |h: &mut Host, inst: &str, method: &str, params: Value| -> Value { serde_json::from_str(&h.bridge_instance(inst, &json!({"id":1,"method":method,"params":params}).to_string())).unwrap() };
+        assert_eq!(call(&mut h, "com.plinth.a", "storage.set", json!({"key":"k","value":"first"}))["ok"], true);
+        assert_eq!(call(&mut h, "com.plinth.a#2", "storage.set", json!({"key":"k","value":"second"}))["ok"], true);
+        assert_eq!(call(&mut h, "com.plinth.a", "storage.get", json!({"key":"k"}))["ok"], "first");
+        assert_eq!(call(&mut h, "com.plinth.a#2", "storage.get", json!({"key":"k"}))["ok"], "second");
+        assert_eq!(call(&mut h, "com.plinth.a#3", "storage.get", json!({"key":"k"}))["ok"], Value::Null, "a new copy starts empty");
+        // one grant covers every copy; revoking it stops every copy at once
+        assert_eq!(call(&mut h, "com.plinth.a#2", "data.get", json!({"key":"system.cpu"}))["ok"]["percent"], 12.5);
+        h.revoke("com.plinth.a", PermissionId::SystemCpu);
+        assert_eq!(call(&mut h, "com.plinth.a#2", "data.get", json!({"key":"system.cpu"}))["error"], "denied:NotGranted");
+        // malformed or unknown instance names never reach a widget
+        for bad in ["com.plinth.a#1", "com.plinth.a#100", "com.plinth.a#x", "com.plinth.a#", "#2", "com.nobody#2", "com.plinth.a#2#3", "com.plinth.a#02"] {
+            assert_eq!(call(&mut h, bad, "storage.get", json!({"key":"k"}))["error"], "unknown_widget", "{bad}");
+        }
+        // storage of copies survives a snapshot and restore, and goes away with the widget
+        let snap = h.storage_snapshot();
+        assert!(snap.contains_key("com.plinth.a#2"));
+        h.restore_storage(snap.clone());
+        assert_eq!(call(&mut h, "com.plinth.a#2", "storage.get", json!({"key":"k"}))["ok"], "second");
+        h.uninstall("com.plinth.a");
+        assert!(h.storage_snapshot().keys().all(|k| !k.starts_with("com.plinth.a")));
+        assert!(crate::valid_copy("x.y#2") && !crate::valid_copy("x.y") && !crate::valid_copy("x.y#1"));
     }
 
     #[test]

@@ -4,6 +4,12 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-30
+### Added
+- Several copies of the same widget, each on any monitor with its own place: "Add a copy" / "Remove copy" in the Monitors view. Copies share the widget's permissions and grants (revoking once stops every copy) and each has its own storage (`plinth-host::Host::bridge_instance`, instance names `id#2` to `id#99`, validated). The fake-monitor lifecycle test now covers a copy (15 of 15 checks); host tests 25.
+### Known
+- One standard-autotest run showed the desktop-visibility check failing once; 3 reruns passed 20 of 20. The click test still occasionally fails on timing (the Dusk selection or the second-launch step).
+
 ## [0.10.0] - 2026-10-30
 Monitors and the picture wallpaper library (owner addendum; decisions D24-D29, D31-D33).
 ### Added

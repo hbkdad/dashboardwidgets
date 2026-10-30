@@ -124,7 +124,7 @@
       "name": "Monitor selector: detection, layout diagram, Identify, widget-to-monitor assignment, per-monitor layers, edge-case recovery",
       "status": "partial",
       "evidence": "fake-monitor lifecycle test 13/13 (3 monitors, unplug, replug, park all, reset, undo); real two-monitor enumeration and layers verified (widgets rendered live on the case screen); hub click-then-click and drag assignment verified; 80 core tests incl. 14 for reconcile",
-      "missing": "same widget type on several monitors (one instance per widget today); right-click Move to monitor; dock/undock, port swap, identical monitors, mixed DPI, virtual desktops NOT TESTED"
+      "missing": "right-click Move to monitor; dock/undock, port swap, identical monitors, mixed DPI, virtual desktops NOT TESTED (copies of a widget on several monitors: built in v0.10.1, lifecycle test 15/15)"
     },
     {
       "id": "F20",
