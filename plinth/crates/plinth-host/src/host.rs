@@ -72,6 +72,8 @@ pub struct Host {
     pub(crate) trusted: Vec<Package>,
     pub(crate) provider: Box<dyn DataProvider>,
     pub(crate) storage: HashMap<String, HashMap<String, String>>,
+    /// Storage namespace for the message being handled: the widget id, or `id#n` for another copy of the same widget.
+    pub(crate) cur_ns: String,
     safe: bool,
 }
 
@@ -93,7 +95,7 @@ fn content_type(path: &str) -> &'static str {
 
 impl Host {
     pub fn new(provider: Box<dyn DataProvider>) -> Self {
-        Host { broker: Broker::new(2000), slots: (0..THIRD_PARTY_SLOTS).map(|_| None).collect(), trusted: Vec::new(), provider, storage: HashMap::new(), safe: false }
+        Host { broker: Broker::new(2000), slots: (0..THIRD_PARTY_SLOTS).map(|_| None).collect(), trusted: Vec::new(), provider, storage: HashMap::new(), cur_ns: String::new(), safe: false }
     }
 
     pub fn scheme_for_slot(slot: usize) -> String {
@@ -122,7 +124,7 @@ impl Host {
         }
         self.trusted.retain(|p| p.manifest.id != id);
         self.broker.unregister(id);
-        self.storage.remove(id);
+        self.storage.retain(|k, _| k != id && !k.starts_with(&format!("{id}#")));
     }
 
     pub fn slot_of(&self, id: &str) -> Option<usize> {
@@ -217,7 +219,8 @@ impl Host {
     /// Restores storage for installed widgets only; values over the quotas are dropped.
     pub fn restore_storage(&mut self, data: HashMap<String, HashMap<String, String>>) {
         for (id, map) in data {
-            if self.slots.iter().flatten().any(|p| p.manifest.id == id) {
+            let base = id.split('#').next().unwrap_or(&id).to_string();
+            if (base == id || valid_copy(&id)) && (self.slots.iter().flatten().any(|p| p.manifest.id == base) || self.trusted.iter().any(|p| p.manifest.id == base)) {
                 let ok: HashMap<String, String> = map.into_iter().filter(|(k, v)| k.len() <= 64 && v.len() <= 8 * 1024).take(256).collect();
                 self.storage.insert(id, ok);
             }
@@ -327,6 +330,23 @@ impl Host {
     /// Like `bridge`, but the trusted layer page names the widget (it created and tracks every iframe). Works for trusted
     /// and third-party widgets alike; the widget id never comes from the message.
     pub fn bridge_widget(&mut self, id: &str, msg: &str) -> String {
+        self.bridge_instance(id, msg)
+    }
+
+    /// `instance` is a widget id, or `id#n` (2 to 99) for another copy of the same widget. Permissions, grants and the activity
+    /// log belong to the widget; each copy has its own storage. As everywhere, the trusted layer page names the instance.
+    pub fn bridge_instance(&mut self, instance: &str, msg: &str) -> String {
+        if instance != instance.split('#').next().unwrap_or("") && !valid_copy(instance) {
+            return serde_json::json!({ "id": null, "error": "unknown_widget" }).to_string();
+        }
+        let id = instance.split('#').next().unwrap_or(instance).to_string();
+        self.cur_ns = instance.to_string();
+        let out = self.bridge_widget_base(&id, msg);
+        self.cur_ns.clear();
+        out
+    }
+
+    fn bridge_widget_base(&mut self, id: &str, msg: &str) -> String {
         if let Some(slot) = self.slot_of(id) {
             return self.bridge(slot, msg);
         }
@@ -334,5 +354,13 @@ impl Host {
             return self.bridge_as(id, msg);
         }
         serde_json::json!({ "id": null, "error": "unknown_widget" }).to_string()
+    }
+}
+
+/// `id#n` with n from 2 to 99 (copy 1 is the plain widget id).
+pub fn valid_copy(instance: &str) -> bool {
+    match instance.split_once('#') {
+        Some((base, n)) => !base.is_empty() && !n.is_empty() && n.len() <= 2 && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit()) && matches!(n.parse::<u32>(), Ok(v) if (2..=99).contains(&v)),
+        None => false,
     }
 }

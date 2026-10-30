@@ -203,8 +203,9 @@ impl App {
             .iter()
             .map(|p| {
                 let r = self.resolved.iter().find(|r| r.widget == p.widget);
+                let nm = { let b = p.widget.split('#').next().unwrap_or(""); let n = names.get(b).cloned().unwrap_or_default(); match p.widget.split_once('#') { Some((_, c)) => format!("{n} (copy {c})"), None => n } };
                 let home_ok = p.home == mons::ROLE_PRIMARY || self.monitors.iter().any(|m| m.id == p.home || (!p.home_fingerprint.is_empty() && m.fingerprint == p.home_fingerprint));
-                json!({ "widget": p.widget, "name": names.get(&p.widget).cloned().unwrap_or_default(), "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
+                json!({ "widget": p.widget, "base": p.widget.split('#').next().unwrap_or(""), "copy": p.widget.split_once('#').and_then(|(_, n)| n.parse::<u32>().ok()).unwrap_or(1), "name": nm, "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
             })
             .collect();
         let (lib_summary, lib_names): (Value, HashMap<String, String>) = {
@@ -240,7 +241,7 @@ impl App {
                 self.st.placements.push(mons::default_placement(id, i));
             }
         }
-        self.st.placements.retain(|p| ids.contains(&p.widget));
+        self.st.placements.retain(|p| ids.iter().any(|i| i == p.widget.split('#').next().unwrap_or(&p.widget)) && (!p.widget.contains('#') || plinth_host::valid_copy(&p.widget)));
         let fb = if self.st.fallback.is_empty() { None } else { Some(self.st.fallback.as_str()) };
         self.resolved = match (self.park_all, self.primary_id()) {
             (true, Some(p)) => mons::bring_all_to(&self.st.placements, &self.monitors, &p),
@@ -266,12 +267,14 @@ impl App {
         let widgets: Vec<Value> = if self.st.safe {
             vec![]
         } else {
-            let h = self.host.lock().unwrap();
-            h.describe()
-                .into_iter()
-                .filter_map(|w| {
-                    let r = self.resolved.iter().find(|r| r.widget == w.id && r.monitor == m.id)?;
-                    Some(json!({ "id": w.id, "slot": w.slot, "trusted": w.trusted, "x": r.x.round(), "y": r.y.round(), "w": r.w.round(), "h": r.h.round() }))
+            let info = self.host.lock().unwrap().describe();
+            self.resolved
+                .iter()
+                .filter(|r| r.monitor == m.id)
+                .filter_map(|r| {
+                    let base = r.widget.split('#').next().unwrap_or(&r.widget);
+                    let w = info.iter().find(|w| w.id == base)?;
+                    Some(json!({ "id": r.widget, "base": base, "slot": w.slot, "trusted": w.trusted, "x": r.x.round(), "y": r.y.round(), "w": r.w.round(), "h": r.h.round() }))
                 })
                 .collect()
         };
@@ -927,6 +930,9 @@ fn main() {
                 hub(&p, r#"{"cmd":"undo_positions"}"#);
                 nap(2);
                 let _ = p.send_event(Ev::Auto(28)); // G: undone
+                hub(&p, r#"{"cmd":"widget_add","widget":"com.plinth.clock","monitor":"FAKE#C"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(29)); // H: a second clock on monitor C, the first still on B
                 let _ = p.send_event(Ev::Auto(26));
                 return;
             }
@@ -1201,6 +1207,36 @@ fn main() {
                             msg = Some("That profile does not exist.".into());
                         }
                     }
+                    "widget_add" => {
+                        // Another copy of an installed widget: shares its permissions, has its own storage and its own place.
+                        let base = v.get("widget").and_then(Value::as_str).unwrap_or("").split('#').next().unwrap_or("").to_string();
+                        let installed = app.host.lock().unwrap().describe().iter().any(|w| w.id == base);
+                        let n_copies = app.st.placements.iter().filter(|p| p.widget.split('#').next() == Some(base.as_str())).count();
+                        if !installed {
+                            msg = Some("That widget is not installed.".into());
+                        } else if n_copies >= 8 || app.st.placements.len() >= 24 {
+                            msg = Some("That is the most copies Plinth allows.".into());
+                        } else {
+                            let n = (2..=99u32).find(|n| !app.st.placements.iter().any(|p| p.widget == format!("{base}#{n}"))).unwrap_or(99);
+                            let id = format!("{base}#{n}");
+                            let mut p = mons::default_placement(&id, n_copies);
+                            p.home = v.get("monitor").and_then(Value::as_str).filter(|m| app.monitors.iter().any(|x| x.id == *m)).unwrap_or(mons::ROLE_PRIMARY).to_string();
+                            p.home_fingerprint = app.monitors.iter().find(|x| x.id == p.home).map(|x| x.fingerprint.clone()).unwrap_or_default();
+                            app.st.placements.push(p);
+                            relayout = true;
+                            msg = Some("Added another copy. Move it to any monitor.".into());
+                        }
+                    }
+                    "widget_remove" => {
+                        let inst = v.get("widget").and_then(Value::as_str).unwrap_or("");
+                        if plinth_host::valid_copy(inst) {
+                            app.st.placements.retain(|p| p.widget != inst);
+                            relayout = true;
+                            msg = Some("Copy removed.".into());
+                        } else {
+                            msg = Some("The original widget stays; remove its copies only.".into());
+                        }
+                    }
                     "assign" => {
                         // Move a widget to a monitor. Anchor, offsets and size are kept, so it lands in the same place relative to the
                         // new monitor and keeps its settings. Only connected monitors (or the role "primary") can be chosen.
@@ -1379,7 +1415,7 @@ fn main() {
                 reply(&app, &hub_view, msg.as_deref());
             }
             Event::UserEvent(Ev::Layer { wid, msg }) => {
-                let json = app.host.lock().unwrap().bridge_widget(&wid, &msg);
+                let json = app.host.lock().unwrap().bridge_instance(&wid, &msg);
                 let _ = proxy.send_event(Ev::Deliver { wid, json });
             }
             Event::UserEvent(Ev::Deliver { wid, json }) => {
@@ -1600,7 +1636,7 @@ fn main() {
                         let _ = l.webview.evaluate_script_with_callback(js, move |r| *vp.lock().unwrap() = Some(r));
                     }
                 }
-                21..=25 | 27 | 28 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                21..=25 | 27..=29 => mon_snaps.push(MonSnap::take(&app, &layers)),
                 40 => lp.before = os_wall::snapshot().ok(),
                 41 => {
                     lp.summary1 = Some(app.lib.lock().unwrap().summary());
@@ -1755,14 +1791,14 @@ impl MonSnap {
 /// C monitor B replugged, D park all, E park all off, F positions reset, G reset undone.
 fn monitor_report(app: &App, snaps: &[MonSnap]) -> i32 {
     println!("\n===== Monitor lifecycle =====");
-    for (n, s) in ["A own monitors", "B B unplugged", "C B replugged", "D park all", "E park all off", "F reset", "G undo"].iter().zip(snaps) {
+    for (n, s) in ["A own monitors", "B B unplugged", "C B replugged", "D park all", "E park all off", "F reset", "G undo", "H copy of the clock"].iter().zip(snaps) {
         println!("   {n}: layers {:?}\n      shown {:?}\n      homes {:?}", s.layers, s.resolved, s.homes);
     }
     println!("   layout log entries: {}", app.layout_log.len());
     let (clock, card, vitals, notes) = ("com.plinth.clock", "com.plinth.buildcard", "com.plinth.pcvitals", "com.plinth.notes");
     let g = |i: usize| snaps.get(i);
     let checks: Vec<(&str, bool)> = vec![
-        ("all seven snapshots were taken", snaps.len() == 7),
+        ("all eight snapshots were taken", snaps.len() == 8),
         ("A: clock and build card are on monitor B, vitals on C, notes on the primary, none parked", g(0).map_or(false, |s| s.on(clock) == Some(("FAKE#B", false)) && s.on(card) == Some(("FAKE#B", false)) && s.on(vitals) == Some(("FAKE#C", false)) && s.on(notes) == Some(("FAKE#A", false)))),
         ("A: one layer window per monitor that has something to draw (3)", g(0).map_or(false, |s| s.layers == vec!["FAKE#A", "FAKE#B", "FAKE#C"])),
         ("B: with monitor B unplugged its widgets are parked on the primary, still visible", g(1).map_or(false, |s| s.on(clock) == Some(("FAKE#A", true)) && s.on(card) == Some(("FAKE#A", true)) && s.on(vitals) == Some(("FAKE#C", false)))),
@@ -1774,6 +1810,8 @@ fn monitor_report(app: &App, snaps: &[MonSnap]) -> i32 {
         ("E: turning it off restores the saved layout", g(4).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved))),
         ("F: Reset widget positions sends every widget to the primary monitor's default places", g(5).map_or(false, |s| s.resolved.iter().all(|r| r.1 == "FAKE#A" && !r.2))),
         ("G: Undo brings the previous assignments back", g(6).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved) && Some(&s.homes) == g(0).map(|a| &a.homes))),
+        ("H: a second copy of the clock runs on monitor C while the first stays on monitor B", g(7).map_or(false, |s| s.on(clock) == Some(("FAKE#B", false)) && s.on("com.plinth.clock#2") == Some(("FAKE#C", false)))),
+        ("H: monitor C now has a layer for both the vitals and the clock copy", g(7).map_or(false, |s| s.layers.contains(&"FAKE#C".to_string()))),
         ("the saved home of the clock stayed monitor B in the file the app writes", app.st.placements.iter().any(|p| p.widget == clock && p.home == "FAKE#B")),
     ];
     let mut failed = 0;

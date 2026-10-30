@@ -108,13 +108,18 @@ pub const ROLE_PRIMARY: &str = "primary";
 
 /// The default place for a widget that has no saved placement (the layout shipped through v0.9).
 pub fn default_placement(widget: &str, index: usize) -> Placement {
-    let (anchor, dx, dy, w, h) = match widget {
+    let base = widget.split('#').next().unwrap_or(widget);
+    let copy = widget.split_once('#').and_then(|(_, n)| n.parse::<usize>().ok()).unwrap_or(1);
+    let (anchor, dx, dy, w, h) = match base {
         "com.plinth.clock" => (Anchor::TopLeft, 72.0, 72.0, 360.0, 118.0),
         "com.plinth.pcvitals" => (Anchor::TopRight, 72.0, 72.0, 400.0, 250.0),
         "com.plinth.buildcard" => (Anchor::BottomRight, 72.0, 150.0, 400.0, 190.0),
         "com.plinth.notes" => (Anchor::BottomLeft, 72.0, 150.0, 330.0, 200.0),
         _ => (Anchor::TopLeft, 72.0 + 280.0 * index as f32, 430.0, 300.0, 160.0),
     };
+    // A further copy of a widget is offset so it does not sit exactly on top of the first one.
+    let shift = 40.0 * (copy.saturating_sub(1)) as f32;
+    let (dx, dy) = (dx + shift, dy + shift);
     Placement { widget: widget.to_string(), home: ROLE_PRIMARY.to_string(), home_fingerprint: String::new(), anchor, dx, dy, w, h }
 }
 
@@ -340,6 +345,15 @@ mod tests {
         assert_eq!((gone, came.len()), (vec!["Mon C".to_string()], 0));
         let (gone, came) = diff_monitors(&two, &all);
         assert_eq!((gone.len(), came), (0, vec!["Mon C".to_string()]));
+    }
+
+    #[test]
+    fn extra_copies_get_their_own_default_place() {
+        let a = default_placement("com.plinth.clock", 0);
+        let b = default_placement("com.plinth.clock#2", 0);
+        assert_eq!(a.anchor, b.anchor);
+        assert!(b.dx > a.dx && b.dy > a.dy);
+        assert_eq!(b.w, a.w);
     }
 
     #[test]

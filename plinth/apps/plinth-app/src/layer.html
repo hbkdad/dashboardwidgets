@@ -28,7 +28,7 @@ for (const w of widgets) {
   f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
   f.title = w.id;
   const origin = 'http://' + (w.trusted ? 'pwt' : 'pw' + w.slot) + '.localhost';
-  f.src = origin + (w.trusted ? '/' + w.id + '/index.html' : '/') + '?ink=__INK__&accent=__ACCENT__';
+  f.src = origin + (w.trusted ? '/' + (w.base || w.id) + '/index.html' : '/') + '?ink=__INK__&accent=__ACCENT__';
   d.appendChild(f);
   document.getElementById('slots').appendChild(d);
   frames[w.id] = { frame: f, origin };
