@@ -10,7 +10,7 @@
 - Tests: 27 core, 13 host, 8 proxy.
 
 ## Next (in order)
-0. v0.8.0 shipped wallpapers. Next: v0.9.0 Security Center, then Moods/Setup Cards import-export. Hardening before store: signature- or location-based trust instead of the `com.plinth.` id prefix.
+0. v0.8.0 shipped wallpapers. Owner addendum (2026-10-30) re-prioritised: v0.9.0 = monitors + static wallpaper library (F19, F20; design done, see PRD 5.4); v0.10.0 = Security Center, then Moods/Setup Cards import-export. Hardening before store: signature- or location-based trust instead of the `com.plinth.` id prefix.
 1. Done in v0.6.0: hub click test via UI Automation; tray/background mode. Remaining: tray menu click test, autostart option.
 2. Close known gaps: HTTPS allow path test (local TLS server), per-widget proxy attribution, wss, lock/sleep/display/DPI, multi-monitor.
 3. Moods in the app (foreground app, fullscreen, battery probes), Setup Card import/export and 60-second try-out.

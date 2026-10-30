@@ -5,6 +5,15 @@ Date: 2026-10-30. Folder map: `research/` (competitors, market and gaps, sources
 ## Opportunity thesis
 The underserved opportunity is a **safe, update-proof, no-code desktop-widget-and-theme platform with a built-in curated store**, for casual-aesthetic users, streamers and theme creators. Rainmeter has creativity but no onboarding, safety or store; Stardock has polish but fragmented, update-fragile, license-confusing apps; Wallpaper Engine and Lively prove demand but stop at wallpapers. (Judgment grounded in sourced facts; see `research/market-and-gaps.md`.)
 
+## The product in five bullets (updated 2026-10-30)
+- **Wallpapers built in:** a library with bundled images, your own folders (scanned and watched), video and animated wallpapers, slideshows, per-monitor fit modes; no separate wallpaper app.
+- **Monitor control:** see your real monitor layout, put each widget and wallpaper on exactly the monitor you choose, and have it come back correctly after unplug, dock, resolution or scaling changes.
+- **Safe widgets:** every widget declares what it can touch; you see, log and revoke it; Safe mode; no network except through a Plinth proxy.
+- **One hub, one profile:** wallpapers, widgets, monitor assignments and a legibility setting save and restore together; Revert undoes everything.
+- **Honest cost:** the Impact Meter shows what each wallpaper and widget costs, and everything pauses in games, on battery and in remote sessions.
+
+Build status: monitoring, pause governor and video/web wallpapers shipped (v0.8.0). Folder scanning, static image library and the monitor selector are designed and next (see `plinth/ROADMAP.md`, `design/product-requirements.md` section 5.4, `design/architecture.md` sections 11 to 13, `research/monitors-and-wallpapers.md`).
+
 ## The product: Plinth (working name; trademark UNVERIFIED)
 **Decision made: compete on the narrowed wedge** (safety, no-code builder, creator payouts, no shell replacement).
 - **Permission Center:** every widget declares what it can touch; you see, log and revoke it; Safe mode.

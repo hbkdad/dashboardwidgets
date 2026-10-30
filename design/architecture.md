@@ -34,7 +34,7 @@ Rendering engine: **WebView2 (Chromium/DirectComposition)** for widgets and hub.
 │ iframe             │
 └────────────────────┘
 ```
-- **One widget-host WebView2 per monitor** (not per widget) to cap process count. Widgets are origin-isolated iframes (`plinth-widget://<id>`), each with CSP.
+- **One widget-host layer window per monitor that needs one** (widgets or a motion wallpaper), sharing one WebView2 environment (D27; cost of the 2nd and 3rd layer NOT MEASURED). Monitors with only a static wallpaper need no layer (D24). Widgets are origin-isolated iframes (`plinth-widget://<id>`), each with CSP.
 - **Core ↔ widget IPC:** only through the permission broker; widgets never touch Tauri IPC directly.
 - **Settings/profile:** JSON files in `%APPDATA%\Plinth\`, export/import as `.plinthprofile` (zip). Cloud sync is post-v1.
 
@@ -107,6 +107,12 @@ Permissions (user-visible, per widget, revocable): `system.cpu|ram|gpu|disk|netw
 | GPU | <1% idle; animations capped at 30 fps default, 60 fps opt-in | `requestAnimationFrame` wrapped by host |
 | Startup to visible desktop | <3 s after login (delay-start option) | Lazy widget init |
 | In-game | 0% measurable: widgets suspended, windows hidden | Governor (fullscreen, game list, battery, RDP, display-off) |
+| Wallpaper, video 1080p30 H.264, one monitor | +90 MB, +2.6% of one core while visible, about 0% covered (measured, v0.8.0, one machine) | Impact Meter; governor pause; GPU load NOT measured |
+| Wallpaper, web page | +40 to +145 MB, +2.6 to +7.2% while visible (measured, three bundled pages) | Pages capped at 30 fps; unloaded when paused |
+| Static wallpaper via OS | 0 runtime cost when the monitor has no widgets (INFERENCE: the OS draws it) | `IDesktopWallpaper` |
+| Library of 10,000 images (targets, NOT validated) | Hub grid first paint under 300 ms from the index; resident hub memory increase under 80 MB (virtualized grid, 200 decoded thumbnails max); thumbnails generated at low priority at 20 per second or better; disk cache capped (default 500 MB, LRU) | Benchmark with a generated 10k-image folder |
+| Folder scan | Metadata-only pass of 300 or more files per second on SSD (target); incremental after the first scan | Benchmark |
+| Display change handling | Reconcile completes in under 200 ms; no persistence writes during the event | Unit tests on the pure function |
 **Quality gate:** a release cannot ship if the benchmark suite regresses >10% on any row. Week 1 prototype must validate WebView2 RAM claim; if >250 MB per monitor, switch declarative widgets to a Rust/Direct2D renderer (option C for the hot path).
 
 ## 7. Security model
@@ -136,3 +142,29 @@ Permissions (user-visible, per widget, revocable): `system.cpu|ram|gpu|disk|netw
 
 ## 10. Testing
 Unit (Rust), golden-image tests for declarative renderer, multi-monitor/DPI matrix in VMs, performance benchmark suite, fuzz the package parser.
+
+## 11. Monitors and widget placement (addendum; D25, D26, D27)
+- **Enumeration:** `EnumDisplayMonitors` for handles and rectangles [S46], `GetMonitorInfo` for work area and primary flag, `GetDpiForMonitor`/`GetDpiForWindow` for scale [S47, S51], `QueryDisplayConfig` + `DisplayConfigGetDeviceInfo` for friendly name, device path, EDID ids, refresh rate and rotation [S48, S49]. The process is Per-Monitor v2 aware [S51].
+- **Identity:** `MonitorId = monitorDevicePath`, fingerprint = (edidManufactureId, edidProductCodeId, connectorInstance), last resort = position. Matching order: path, fingerprint, then "unmatched" (parked). Shared setups store roles, not hardware ids.
+- **Binding model:** `WidgetPlacement { widget_instance, home: MonitorId or Role, anchor: TopLeft|TopRight|BottomLeft|BottomRight|Center, offset_dip: (x, y), size_dip: (w, h), settings }`. Widget instances (not types) are bound, so the same type can live on several monitors with different settings.
+- **Reconcile (pure function, unit-tested):** `reconcile(placements, monitors, fallback) -> Vec<Resolved { placement, monitor, parked: bool, rect_px }>`. It clamps inside the work area, scales oversize widgets (not below 50%), and never mutates `placements`. Persistence writes `placements` only, so parked or clamped results can never overwrite the home data (the Rainmeter failure [S52]).
+- **Events:** listen for `WM_DISPLAYCHANGE` [S50], `WM_DPICHANGED` [S51] and device/settings change messages (the exact hot-plug event set must be verified on hardware), debounce 1.5 s, re-enumerate, reconcile, then move or create/destroy layer windows. A monitor must be stable for 2 s before widgets return to it.
+- **Layer windows:** one per monitor needing one, attached with the same Progman technique as today; a window is destroyed when its monitor disappears and recreated when it returns. The cross-process `SetParent` DPI-reset risk [S51] must be tested with mixed DPI.
+- **Identify:** a borderless topmost window per monitor rectangle showing its number for about 2 seconds.
+- **Recovery:** "Bring all to primary" = reconcile with every `home` ignored; "Reset positions" = restore the Scene default layout with an undo snapshot.
+
+## 12. Wallpaper engine and library (addendum; D24, D28, D29)
+- **Static images:** per monitor, `IDesktopWallpaper::SetWallpaper(monitorID, path)` [S43] plus `SetPosition` [S44] and `SetBackgroundColor`; the monitorId list comes from `GetMonitorDevicePathAt` and must be joined to the DisplayConfig device paths (NOT TESTED that they are equal). Because position and color look global in the interface, per-monitor fit modes are produced by Plinth composing a cached, pre-fitted image for that monitor when the modes differ.
+- **Layer drawing:** monitors with widgets also draw the image in the layer so glass blur works; CSS maps the modes (Fill=cover, Fit=contain on the letterbox color, Stretch=100% 100%, Center, Tile=repeat, Span=one image offset across monitor rectangles).
+- **Motion wallpapers:** unchanged from v0.8.0 (video and sandboxed web pages, `pwv` origin, governor pause). One active by default.
+- **Slideshow:** Plinth runs the timer (interval, shuffle) because the native slideshow takes only one folder [S45]; rotation pauses with the governor and stops when Plinth is not running (disclosed in the UI).
+- **Revert:** before the first change, snapshot per monitor: wallpaper path, position, background color. Revert restores them.
+- **Library index:** SQLite (WAL) in `%LOCALAPPDATA%\Plinth\library.db`: path, volume id and file id, size, mtime, content hash, width, height, aspect, type, added, favorite, last used, status (ok, missing, offline, corrupt, too large), average luminance grid. Dedupe: size plus hash of first and last 64 KB, full hash only on collision.
+- **Scanning:** recursive with exclude list; first pass reads headers only (dimensions via header parse, refuse more than 16384 px on a side or over 256 MB as "too large" to avoid decompression bombs); later passes compare mtime and file id. Watching: directory change notifications for local folders, polling (on hub open and every 5 minutes) for network and removable folders. Moves and renames are matched by file id, else by content hash, so thumbnails and favorites survive.
+- **Thumbnails:** 320 px JPEG in `%LOCALAPPDATA%\Plinth\thumbs\<hash>.jpg`, generated lazily by one low-priority worker when an item first becomes visible; served to the hub by a custom protocol with long cache headers; the hub grid is virtualized (only visible rows plus two are in the DOM); an LRU keeps at most 200 decoded thumbnails; disk cache capped (default 500 MB).
+- **Failure handling:** missing file shows a card with Locate (file picker) and Remove; offline root marks items offline (kept, dimmed); unreadable or corrupt files get status corrupt with a reason; nothing blocks the UI thread; every error becomes a visible state, never a blank screen.
+- **Legibility assist:** the layer draws a scrim between wallpaper and widgets (none, dim, blur); v1.0 auto mode picks scrim strength from the stored luminance grid so widget text meets a 4.5:1 contrast target (INFERENCE that the grid is accurate enough; to be validated).
+- **Profiles:** Scene schema v2 stores per-monitor entries (`wallpaper`, fit, slideshow, widget placements). Applying on a machine with different monitors maps by identity, then role/order, then parks on the primary.
+
+## 13. Impacts of the addendum on earlier decisions
+Animated wallpapers move into MVP (D29, already shipped). One layer per monitor replaces the single primary-monitor layer built so far (v0.8.0 only handles the primary monitor). Product name, stack (wry/tao WebView2 shell, Rust crates) and MVP scope otherwise unchanged; the `windows` crate is added for COM (D24).
