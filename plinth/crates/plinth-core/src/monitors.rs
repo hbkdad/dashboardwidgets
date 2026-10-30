@@ -115,6 +115,7 @@ pub fn default_placement(widget: &str, index: usize) -> Placement {
         "com.plinth.pcvitals" => (Anchor::TopRight, 72.0, 72.0, 400.0, 250.0),
         "com.plinth.buildcard" => (Anchor::BottomRight, 72.0, 150.0, 400.0, 190.0),
         "com.plinth.notes" => (Anchor::BottomLeft, 72.0, 150.0, 330.0, 200.0),
+        "com.plinth.graphs" => (Anchor::TopLeft, 72.0, 220.0, 520.0, 240.0),
         _ => (Anchor::TopLeft, 72.0 + 280.0 * index as f32, 430.0, 300.0, 160.0),
     };
     // A further copy of a widget is offset so it does not sit exactly on top of the first one.

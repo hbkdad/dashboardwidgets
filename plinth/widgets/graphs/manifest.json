@@ -1,0 +1,7 @@
+{ "format": 1, "id": "com.plinth.graphs", "name": "Live Graphs", "version": "1.0.0", "type": "widget",
+  "permissions": [
+    { "id": "system.cpu", "reason": "Draws how busy your processor has been over the last minute and a half" },
+    { "id": "system.gpu", "reason": "Draws graphics card load and temperature over time" },
+    { "id": "system.ram", "reason": "Draws memory use over time" },
+    { "id": "system.network", "reason": "Draws download and upload speed over time" }
+  ] }

@@ -745,6 +745,14 @@ fn main() {
                 }
             }
         } else {
+            // A first-party widget added in an update has no saved grants yet: give it the permissions it declares, as at first run.
+            for w in h.describe() {
+                if w.id.starts_with("com.plinth.") && !st.grants.contains_key(&w.id) {
+                    for p in &w.permissions {
+                        let _ = h.grant(&w.id, p.id);
+                    }
+                }
+            }
             for (id, perms) in &st.grants {
                 for k in perms {
                     if let Some(p) = PermissionId::parse(k) {
@@ -2222,6 +2230,7 @@ fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize),
     let checks = [
         ("pc vitals: CPU read allowed (granted at first run)", has(&allowed, "com.plinth.pcvitals", "use system.cpu")),
         ("pc vitals: GPU, memory, network and disk reads allowed", ["use system.gpu", "use system.ram", "use system.network", "use system.disk"].iter().all(|k| has(&allowed, "com.plinth.pcvitals", k))),
+        ("live graphs: all four readings were granted automatically (new first-party widget) and used", ["use system.cpu", "use system.gpu", "use system.ram", "use system.network"].iter().all(|k| has(&allowed, "com.plinth.graphs", k))),
         ("build card: parts list read allowed", has(&allowed, "com.plinth.buildcard", "use system.info")),
         ("notes: storage read allowed", has(&allowed, "com.plinth.notes", "use storage")),
         ("clock: made no permission requests (needs none)", !allowed.contains_key("com.plinth.clock") && !blocked.contains_key("com.plinth.clock")),
