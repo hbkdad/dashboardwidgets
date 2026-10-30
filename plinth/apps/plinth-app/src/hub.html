@@ -156,6 +156,8 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 
 <section class="view" id="v-settings" aria-labelledby="hst"><div class="eb">Settings</div><h1 id="hst">Make it yours.</h1>
 <div class="card" style="padding:20px;margin-top:22px"><div class="pr"><div class="w"><b>Start with Windows</b><span>Plinth starts quietly in the tray when you sign in. Your wallpaper and widgets come back by themselves.</span></div><button class="sw" id="autostart" role="switch" aria-checked="false" aria-label="Start Plinth with Windows"></button></div></div>
+<div class="card" style="padding:20px;margin-top:14px"><h2>Troubleshooting</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">If something goes wrong, show the report, read it, and copy it into your message. It lists counts and sizes only: no file names, monitor names, hardware ids or your user name.</p>
+<div class="row mt"><button class="btn" id="dshow">Show diagnostics</button><button class="btn g" id="dcopy" hidden>Copy to clipboard</button></div><textarea id="dtext" readonly hidden aria-label="Diagnostics report" style="width:100%;height:240px;margin-top:12px;font:12px/1.5 var(--mono);color:var(--tx);background:var(--s2);border:1px solid var(--bd2);border-radius:12px;padding:12px"></textarea></div>
 <div class="card" style="padding:20px;margin-top:14px"><h2>About</h2><div class="srow"><span>Version</span><span id="aver">…</span></div><div class="srow"><span>Licence</span><span>Apache-2.0</span></div><div class="srow"><span>Name</span><span>Plinth is a working name</span></div><div class="srow"><span>Signing</span><span>This build is not code-signed</span></div></div></section>
 
 <section class="view" id="v-safety" aria-labelledby="h2"><div class="eb">Safety · Permission Center</div><h1 id="h2">See everything. Revoke anything.</h1>
@@ -290,6 +292,8 @@ function renderMoods(){const m=S.moods;if(!m)return;
     ${c.missing.length?`<div class="note"><b>Not installed, so skipped:</b> ${c.missing.map(esc).join(', ')}</div>`:''}
     <div class="mt"><b>Permissions these widgets can ask for</b> <span style="color:var(--mut);font-size:.8125rem">(nothing is allowed automatically; you decide in Safety)</span>${pr.length?pr.map(([k,v])=>`<div class="srow"><span>${esc(k)}</span><span>${v.map(esc).join(', ')}</span></div>`).join(''):'<div class="srow"><span>None</span><span></span></div>'}${(c.hosts||[]).length?`<div style="color:var(--mut);font-size:.8125rem;margin-top:6px">Internet hosts: ${c.hosts.map(esc).join(', ')}</div>`:''}</div>`}}
 function renderSettings(){$('#autostart').setAttribute('aria-checked',!!S.autostart);$('#aver').textContent=S.version||''}
+window.__onDiag=(t)=>{const a=$('#dtext');a.value=t;a.hidden=false;$('#dcopy').hidden=false};
+$('#dshow').onclick=()=>send('diag');$('#dcopy').onclick=()=>{const a=$('#dtext');a.select();document.execCommand('copy');toast('Copied. Paste it into your message.')};
 $('#autostart').onclick=()=>send('autostart',{on:!S.autostart});
 $('#mtoggle').onclick=()=>send('moods_toggle',{on:!(S.moods&&S.moods.on)});
 $('#mkind').onchange=()=>{const k=$('#mkind').value;$('#mf-app').hidden=k!=='app';$('#mf-time').hidden=k!=='time'};
