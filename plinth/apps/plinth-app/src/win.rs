@@ -39,6 +39,9 @@ extern "system" {
     fn GetSystemPowerStatus(s: *mut [u8; 12]) -> i32;
     fn CreateMutexW(attrs: *const c_void, initial_owner: i32, name: *const u16) -> isize;
     fn GetLastError() -> u32;
+    fn CreateEventW(attrs: *const c_void, manual_reset: i32, initial: i32, name: *const u16) -> isize;
+    fn SetEvent(h: isize) -> i32;
+    fn WaitForSingleObject(h: isize, ms: u32) -> u32;
 }
 
 fn w(s: &str) -> Vec<u16> {
@@ -114,6 +117,23 @@ pub fn first_instance(name: &str) -> bool {
         let h = CreateMutexW(null(), 0, w(name).as_ptr());
         h != 0 && GetLastError() != 183 // ERROR_ALREADY_EXISTS
     }
+}
+
+/// A named event the second launch sets to tell the first instance "show your hub". Asking the running app to show its own window
+/// is reliable; showing another process's hidden window from outside raced with the app's own window bookkeeping (seen in about
+/// 1 of 10 click-test runs). Returns the event handle (0 if it could not be created).
+pub fn show_event(instance: &str) -> isize {
+    unsafe { CreateEventW(null(), 0, 0, w(&format!("{instance}-show")).as_ptr()) }
+}
+
+pub fn signal_show(instance: &str) -> bool {
+    let h = show_event(instance);
+    h != 0 && unsafe { SetEvent(h) } != 0
+}
+
+/// Waits up to `ms` for the show signal; true if it was set (auto-reset).
+pub fn wait_show(h: isize, ms: u32) -> bool {
+    h != 0 && unsafe { WaitForSingleObject(h, ms) } == 0
 }
 
 /// Brings the already-running instance's hub window to the front (it may be hidden in the tray).
