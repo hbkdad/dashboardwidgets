@@ -10,6 +10,7 @@
 //! PLINTH_AUTOTEST=<seconds> (apply, exercise, verify, print a report, exit with 0/1).
 
 mod hw;
+mod mon;
 mod sec;
 mod state;
 mod win;
@@ -18,7 +19,10 @@ use plinth_core::{impact, PermissionId};
 use plinth_host::{Host, Package, WallpaperStore, WALLPAPER_SCHEME};
 use plinth_proxy::{Dest, Log, Policy, Verdict};
 use serde_json::{json, Value};
+use plinth_core::monitors::{self as mons, MonitorInfo, Resolved};
 use state::State;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -43,6 +47,8 @@ enum Ev {
     Pause(bool),
     Drop(Vec<PathBuf>),
     Sec(String),
+    Monitors(Vec<MonitorInfo>),
+    IdentifyEnd,
     DropHover(bool),
     Auto(u8),
 }
@@ -94,6 +100,17 @@ struct App {
     walls: Arc<Mutex<WallpaperStore>>,
     /// Recent wallpaper requests (path, status), for the autotest and diagnostics.
     wall_log: Arc<Mutex<Vec<(String, u16)>>>,
+    /// Connected monitors (stable list, debounced) and where every widget is shown right now.
+    monitors: Vec<MonitorInfo>,
+    resolved: Vec<Resolved>,
+    /// "Bring all widgets to the primary monitor": a temporary view, never saved (D26).
+    park_all: bool,
+    /// Fake monitors for tests (PLINTH_FAKE_MONITORS): the layers are ordinary windows.
+    fake: Arc<Mutex<Option<String>>>,
+    /// Every reconcile result, for the autotest: (connected monitor ids, [(widget, monitor, parked)]).
+    layout_log: Vec<(Vec<String>, Vec<(String, String, bool)>)>,
+    /// Placements before the last "Reset widget positions", for Undo.
+    undo_placements: Option<Vec<plinth_core::monitors::Placement>>,
 }
 
 impl App {
@@ -151,14 +168,62 @@ impl App {
             Some(c) => format!("adds ≈{} MB and ≈{:.1}% of one core while visible · pauses in games, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct),
             None => "no extra cost".to_string(),
         };
-        json!({ "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        let mons_json: Vec<Value> = self
+            .monitors
+            .iter()
+            .enumerate()
+            .map(|(i, m)| json!({ "id": m.id, "n": i + 1, "name": m.name, "x": m.x, "y": m.y, "w": m.width_px, "h": m.height_px, "dpi": m.dpi, "scale": m.scale_percent(), "primary": m.primary, "hz": m.refresh_hz, "portrait": m.portrait(), "wallpaper": self.wallpaper_for(m), "layer": layer_targets(self).iter().any(|t| t.id == m.id) }))
+            .collect();
+        let place_json: Vec<Value> = self
+            .st
+            .placements
+            .iter()
+            .map(|p| {
+                let r = self.resolved.iter().find(|r| r.widget == p.widget);
+                let home_ok = p.home == mons::ROLE_PRIMARY || self.monitors.iter().any(|m| m.id == p.home || (!p.home_fingerprint.is_empty() && m.fingerprint == p.home_fingerprint));
+                json!({ "widget": p.widget, "name": names.get(&p.widget).cloned().unwrap_or_default(), "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
+            })
+            .collect();
+        json!({ "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
     }
 
-    fn wallpaper_html(&self) -> String {
+    fn primary_id(&self) -> Option<String> {
+        self.monitors.iter().find(|m| m.primary).or(self.monitors.first()).map(|m| m.id.clone())
+    }
+
+    /// The wallpaper id shown on a monitor: the primary uses the main selection, others their own (or none).
+    fn wallpaper_for(&self, m: &MonitorInfo) -> String {
+        if m.primary {
+            self.st.wallpaper.clone()
+        } else {
+            self.st.monitor_walls.get(&m.id).cloned().unwrap_or_default()
+        }
+    }
+
+    /// Fill in placements for new widgets, then compute where everything is shown. Reads the saved placements, never
+    /// writes transient results back into them (D26).
+    fn recompute(&mut self) {
+        let ids: Vec<String> = self.host.lock().unwrap().describe().into_iter().map(|w| w.id).collect();
+        for (i, id) in ids.iter().enumerate() {
+            if !self.st.placements.iter().any(|p| &p.widget == id) {
+                self.st.placements.push(mons::default_placement(id, i));
+            }
+        }
+        self.st.placements.retain(|p| ids.contains(&p.widget));
+        let fb = if self.st.fallback.is_empty() { None } else { Some(self.st.fallback.as_str()) };
+        self.resolved = match (self.park_all, self.primary_id()) {
+            (true, Some(p)) => mons::bring_all_to(&self.st.placements, &self.monitors, &p),
+            _ => mons::reconcile(&self.st.placements, &self.monitors, fb),
+        };
+        self.layout_log.push((self.monitors.iter().map(|m| m.id.clone()).collect(), self.resolved.iter().map(|r| (r.widget.clone(), r.monitor.clone(), r.parked)).collect()));
+        self.layout_log.truncate(200);
+    }
+
+    fn wallpaper_html(&self, wid: &str) -> String {
         let walls = self.walls.lock().unwrap();
-        let Some(e) = walls.get(&self.st.wallpaper) else { return String::new() };
+        let Some(e) = walls.get(wid) else { return String::new() };
         // id and entry are validated to a closed character set by plinth-core, so they cannot break out of the attribute.
         let url = WallpaperStore::entry_url(&e.wallpaper);
         match e.wallpaper.kind {
@@ -167,12 +232,23 @@ impl App {
         }
     }
 
-    fn layer_html(&self) -> String {
+    fn layer_html(&self, m: &MonitorInfo) -> String {
         let s = scene(&self.st.scene);
-        let widgets: Vec<Value> = if self.st.safe { vec![] } else { self.host.lock().unwrap().describe().into_iter().map(|w| json!({ "id": w.id, "slot": w.slot, "trusted": w.trusted })).collect() };
+        let widgets: Vec<Value> = if self.st.safe {
+            vec![]
+        } else {
+            let h = self.host.lock().unwrap();
+            h.describe()
+                .into_iter()
+                .filter_map(|w| {
+                    let r = self.resolved.iter().find(|r| r.widget == w.id && r.monitor == m.id)?;
+                    Some(json!({ "id": w.id, "slot": w.slot, "trusted": w.trusted, "x": r.x.round(), "y": r.y.round(), "w": r.w.round(), "h": r.h.round() }))
+                })
+                .collect()
+        };
         let banner = if self.st.safe { r#"<div style="position:fixed;left:50%;top:6%;transform:translateX(-50%);padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.55);border:1px solid #ffb454;color:#ffb454;font:600 14px system-ui">Safe mode: widgets are paused</div>"# } else { "" };
-        let beacon = if self.beacon { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
-        let wp_html = self.wallpaper_html();
+        let beacon = if self.beacon && m.primary { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
+        let wp_html = self.wallpaper_html(&self.wallpaper_for(m));
         let mut html = LAYER_HTML.to_string();
         // Cost experiments (and the basis of the Performance mode setting): PLINTH_NO_ANIM drops the wallpaper drift,
         // PLINTH_NO_BLUR replaces the glass blur with a flat translucent panel.
@@ -196,6 +272,55 @@ impl App {
 struct Layer {
     _window: Window,
     webview: WebView,
+    rect: (i32, i32, u32, u32),
+    html_hash: u64,
+}
+
+fn hash_str(s: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+/// Monitors that need a layer window: the primary (it paints the Scene), and any monitor with widgets or a motion wallpaper.
+/// A monitor with nothing to draw has no layer and costs nothing (D24, D27).
+fn layer_targets(app: &App) -> Vec<MonitorInfo> {
+    if !app.st.applied {
+        return Vec::new();
+    }
+    app.monitors
+        .iter()
+        .filter(|m| m.primary || (!app.st.safe && app.resolved.iter().any(|r| r.monitor == m.id)) || !app.wallpaper_for(m).is_empty())
+        .cloned()
+        .collect()
+}
+
+/// Make the set of layer windows match the connected monitors, widgets and wallpapers. Existing layers whose monitor rectangle
+/// is unchanged are reloaded only when their page actually changed.
+fn sync_layers(target: &EventLoopWindowTarget<Ev>, app: &App, layers: &mut HashMap<String, Layer>, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) {
+    let want = layer_targets(app);
+    layers.retain(|id, _| want.iter().any(|m| &m.id == id));
+    for m in want {
+        let html = app.layer_html(&m);
+        let hh = hash_str(&html);
+        let rect = (m.x, m.y, m.width_px, m.height_px);
+        match layers.get_mut(&m.id) {
+            Some(l) if l.rect == rect => {
+                if l.html_hash != hh {
+                    let _ = l.webview.load_html(&html);
+                    l.html_hash = hh;
+                }
+                continue;
+            }
+            Some(_) => {
+                layers.remove(&m.id);
+            }
+            None => {}
+        }
+        if let Some(l) = create_layer(target, app, &m, &html, ctx, proxy) {
+            layers.insert(m.id.clone(), l);
+        }
+    }
 }
 
 fn widgets_dir() -> PathBuf {
@@ -228,21 +353,22 @@ fn user_wallpapers_dir() -> PathBuf {
     std::env::var_os("PLINTH_USER_WALLPAPERS").map(PathBuf::from).unwrap_or_else(|| state::data_dir().join("wallpapers"))
 }
 
-fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> Option<Layer> {
-    let monitor = target.primary_monitor()?;
-    let (size, pos) = (monitor.size(), monitor.position());
+fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, html: &str, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> Option<Layer> {
     let window = WindowBuilder::new().with_title("Plinth desktop layer").with_decorations(false).with_visible(false).with_resizable(false).build(target).ok()?;
-    let attached = std::env::var_os("PLINTH_NO_ATTACH").is_none() && win::attach_to_desktop(window.hwnd() as isize, pos.x, pos.y, size.width as i32, size.height as i32);
+    let fake = app.fake.lock().unwrap().is_some();
+    let attached = !fake && std::env::var_os("PLINTH_NO_ATTACH").is_none() && win::attach_to_desktop(window.hwnd() as isize, m.x, m.y, m.width_px as i32, m.height_px as i32);
     if !attached {
-        eprintln!("desktop layer attach skipped or failed: using a normal window");
-        window.set_inner_size(tao::dpi::PhysicalSize::new(size.width / 2, size.height / 2));
+        eprintln!("desktop layer for {} not attached (fake monitor or attach failed): using a normal window", m.name);
+        window.set_decorations(true);
+        window.set_inner_size(tao::dpi::PhysicalSize::new((m.width_px / 4).max(240), (m.height_px / 4).max(160)));
+        window.set_outer_position(tao::dpi::PhysicalPosition::new(60 + m.x / 4 + 400, 60 + m.y / 4 + 200));
         window.set_visible(true);
     }
     let host = app.host.clone();
     let ipc_proxy = proxy.clone();
-    let (w, h) = if attached { (size.width, size.height) } else { (size.width / 2, size.height / 2) };
+    let (w, h) = if attached { (m.width_px, m.height_px) } else { ((m.width_px / 4).max(240), (m.height_px / 4).max(160)) };
     let mut b = WebViewBuilder::new_with_web_context(ctx)
-        .with_html(app.layer_html())
+        .with_html(html.to_string())
         .with_bounds(wry::Rect { position: wry::dpi::PhysicalPosition::new(0, 0).into(), size: wry::dpi::PhysicalSize::new(w, h).into() })
         .with_ipc_handler(move |req: wry::http::Request<String>| {
             let Ok(v) = serde_json::from_str::<Value>(req.body()) else { return };
@@ -288,7 +414,14 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebCont
     use wry::WebViewBuilderExtWindows;
     b = b.with_additional_browser_args(format!("--proxy-server=http://127.0.0.1:{} --proxy-bypass-list=<-loopback>", app.proxy_port));
     let webview = b.build(&window).ok()?;
-    Some(Layer { _window: window, webview })
+    Some(Layer { _window: window, webview, rect: (m.x, m.y, m.width_px, m.height_px), html_hash: hash_str(html) })
+}
+
+fn current_monitors(fake: &Arc<Mutex<Option<String>>>) -> Vec<MonitorInfo> {
+    match fake.lock().unwrap().clone() {
+        Some(spec) => mon::parse_fake(&spec),
+        None => mon::enumerate_real(),
+    }
 }
 
 fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> WebView {
@@ -387,7 +520,10 @@ fn main() {
     st.first_run = st.first_run && autotest.is_none();
     let walls = Arc::new(Mutex::new(WallpaperStore::new(wallpapers_dir(), user_wallpapers_dir())));
     println!("wallpapers: {} found", walls.lock().unwrap().list().len());
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())) };
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None };
+    app.monitors = current_monitors(&app.fake);
+    println!("monitors: {}", app.monitors.iter().map(|m| format!("{} {}x{} at {},{} {}%{}", m.name, m.width_px, m.height_px, m.x, m.y, m.scale_percent(), if m.primary { " primary" } else { "" })).collect::<Vec<_>>().join(" | "));
+    app.recompute();
     if app.walls.lock().unwrap().get(&app.st.wallpaper).is_none() {
         app.st.wallpaper.clear(); // the chosen wallpaper was removed or is broken: fall back to the Scene gradient
     }
@@ -429,7 +565,8 @@ fn main() {
         }));
     }
     let mut layer_ctx = WebContext::new(Some(state::local_dir().join("wv-layer")));
-    let mut layer: Option<Layer> = None;
+    let mut layers: HashMap<String, Layer> = HashMap::new();
+    let mut identify: Vec<(Window, WebView)> = Vec::new();
 
     {
         // Hub revival: if the hub was hidden (its web view released) and something makes the window visible again, such as a
@@ -460,6 +597,35 @@ fn main() {
             }
         });
     }
+    {
+        // Display watcher: poll the monitor list once a second; a change must hold still for 2 s before it is applied, so docks
+        // and wake-ups that enumerate late do not shuffle widgets (D26). Polling is used because the documented WM_DISPLAYCHANGE
+        // is about resolution changes, not hot-plug (research/monitors-and-wallpapers.md); event-based detection is a later refinement.
+        let p = proxy.clone();
+        let fake = app.fake.clone();
+        let mut last = app.monitors.clone();
+        std::thread::spawn(move || {
+            let mut candidate: Option<(Vec<MonitorInfo>, std::time::Instant)> = None;
+            loop {
+                std::thread::sleep(Duration::from_millis(500));
+                let now = current_monitors(&fake);
+                if now.is_empty() || now == last {
+                    candidate = None;
+                    continue;
+                }
+                match &candidate {
+                    Some((c, t)) if *c == now => {
+                        if t.elapsed() >= Duration::from_millis(mons::RETURN_DELAY_MS) {
+                            last = now.clone();
+                            candidate = None;
+                            let _ = p.send_event(Ev::Monitors(now));
+                        }
+                    }
+                    _ => candidate = Some((now, std::time::Instant::now())),
+                }
+            }
+        });
+    }
     let tick = proxy.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(30));
@@ -472,6 +638,39 @@ fn main() {
                 let _ = p.send_event(Ev::Hub(j.to_string()));
             };
             let nap = |s: u64| std::thread::sleep(Duration::from_secs(s));
+            if std::env::var_os("PLINTH_AUTOTEST_MON").is_some() {
+                // Monitor lifecycle on fake monitors (PLINTH_FAKE_MONITORS="...#A;...#B;...#C"): assign, unplug B, replug B, park all.
+                let spec3 = std::env::var("PLINTH_FAKE_MONITORS").unwrap_or_default();
+                let spec2 = spec3.split(';').filter(|s| !s.contains("#B")).collect::<Vec<_>>().join(";");
+                nap(2);
+                hub(&p, r#"{"cmd":"apply"}"#);
+                nap(4);
+                hub(&p, r#"{"cmd":"assign","widget":"com.plinth.clock","monitor":"FAKE#B"}"#);
+                hub(&p, r#"{"cmd":"assign","widget":"com.plinth.buildcard","monitor":"FAKE#B"}"#);
+                hub(&p, r#"{"cmd":"assign","widget":"com.plinth.pcvitals","monitor":"FAKE#C"}"#);
+                nap(4);
+                let _ = p.send_event(Ev::Auto(21)); // A: everything on its own monitor
+                hub(&p, &json!({ "cmd": "fake_monitors", "spec": spec2 }).to_string());
+                nap(6);
+                let _ = p.send_event(Ev::Auto(22)); // B: monitor B unplugged
+                hub(&p, &json!({ "cmd": "fake_monitors", "spec": spec3 }).to_string());
+                nap(6);
+                let _ = p.send_event(Ev::Auto(23)); // C: monitor B back
+                hub(&p, r#"{"cmd":"park_all","on":true}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(24)); // D: bring all to primary
+                hub(&p, r#"{"cmd":"park_all","on":false}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(25)); // E: back to the saved layout
+                hub(&p, r#"{"cmd":"reset_positions"}"#);
+                nap(2);
+                let _ = p.send_event(Ev::Auto(27)); // F: positions reset
+                hub(&p, r#"{"cmd":"undo_positions"}"#);
+                nap(2);
+                let _ = p.send_event(Ev::Auto(28)); // G: undone
+                let _ = p.send_event(Ev::Auto(26));
+                return;
+            }
             nap(2);
             hub(&p, r#"{"cmd":"apply"}"#); // same code path as pressing Apply in the hub
             nap(6);
@@ -513,6 +712,7 @@ fn main() {
         std::thread::spawn(move || *sp.lock().unwrap() = Some(sec::gather()));
     }
     let _ = &sec_last;
+    let mut mon_snaps: Vec<MonSnap> = Vec::new();
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
     let mut applied_before_start = app.st.applied;
@@ -521,8 +721,8 @@ fn main() {
         *control_flow = ControlFlow::Wait;
         if applied_before_start {
             applied_before_start = false;
-            layer = create_layer(target, &app, &mut layer_ctx, &proxy);
-            println!("restored applied scene {} (layer created: {})", app.st.scene, layer.is_some());
+            sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+            println!("restored applied scene {} (layers created: {})", app.st.scene, layers.len());
         }
         // The hub's browser process is released while the hub is hidden (about 200 MB) and rebuilt when it is shown again,
         // whether from the tray, a second launch, or any other way the window becomes visible.
@@ -542,6 +742,7 @@ fn main() {
                 let cmd = v.get("cmd").and_then(Value::as_str).unwrap_or("");
                 let mut msg: Option<String> = None;
                 let mut reload = false;
+                let mut relayout = false;
                 match cmd {
                     "state" => {}
                     "scene" => {
@@ -552,17 +753,13 @@ fn main() {
                     }
                     "apply" => {
                         app.st.applied = true;
-                        if let Some(l) = layer.as_ref() {
-                            let _ = l.webview.load_html(&app.layer_html());
-                        } else {
-                            layer = create_layer(target, &app, &mut layer_ctx, &proxy);
-                        }
-                        println!("hub: apply {} (layer present: {})", app.st.scene, layer.is_some());
+                        sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                        println!("hub: apply {} (layer present: {}, layers: {})", app.st.scene, !layers.is_empty(), layers.len());
                         msg = Some(format!("Applied {}. Your previous desktop is restored with Revert.", scene(&app.st.scene).name));
                     }
                     "revert" => {
                         app.st.applied = false;
-                        layer = None;
+                        layers.clear();
                         println!("hub: revert");
                         msg = Some("Reverted. Your desktop is back to how it was.".into());
                     }
@@ -587,6 +784,105 @@ fn main() {
                         app.sync_proxy();
                         reload = app.st.applied;
                         msg = Some(if app.st.safe { "Safe mode on. Widgets are paused and the network is closed.".into() } else { "Safe mode off.".into() });
+                    }
+                    "assign" => {
+                        // Move a widget to a monitor. Anchor, offsets and size are kept, so it lands in the same place relative to the
+                        // new monitor and keeps its settings. Only connected monitors (or the role "primary") can be chosen.
+                        let (wid, mid) = (v.get("widget").and_then(Value::as_str).unwrap_or(""), v.get("monitor").and_then(Value::as_str).unwrap_or(""));
+                        let fp = app.monitors.iter().find(|m| m.id == mid).map(|m| m.fingerprint.clone());
+                        let ok_target = mid == mons::ROLE_PRIMARY || fp.is_some();
+                        match (app.st.placements.iter_mut().find(|p| p.widget == wid), ok_target) {
+                            (Some(p), true) => {
+                                p.home = mid.to_string();
+                                p.home_fingerprint = fp.unwrap_or_default();
+                                relayout = true;
+                                msg = Some("Moved. It keeps its size and position on the new monitor.".into());
+                            }
+                            _ => msg = Some("That widget or monitor is not available.".into()),
+                        }
+                    }
+                    "fallback" => {
+                        let mid = v.get("monitor").and_then(Value::as_str).unwrap_or("");
+                        if mid.is_empty() || app.monitors.iter().any(|m| m.id == mid) {
+                            app.st.fallback = mid.to_string();
+                            relayout = true;
+                            msg = Some(if mid.is_empty() { "Widgets will use the primary monitor when their own is unplugged.".into() } else { "Fallback monitor set.".into() });
+                        }
+                    }
+                    "park_all" => {
+                        app.park_all = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+                        relayout = true;
+                        msg = Some(if app.park_all { "All widgets are on the primary monitor for now. Your saved layout is untouched.".into() } else { "Widgets are back on their own monitors.".into() });
+                    }
+                    "reset_positions" => {
+                        app.undo_placements = Some(app.st.placements.clone());
+                        app.st.placements.clear(); // recompute() refills every widget with its default place
+                        app.park_all = false;
+                        relayout = true;
+                        msg = Some("Widget positions reset. Undo is available.".into());
+                    }
+                    "undo_positions" => {
+                        if let Some(prev) = app.undo_placements.take() {
+                            app.st.placements = prev;
+                            relayout = true;
+                            msg = Some("Positions restored.".into());
+                        }
+                    }
+                    "monitor_wallpaper" => {
+                        let (mid, wid) = (v.get("monitor").and_then(Value::as_str).unwrap_or(""), v.get("id").and_then(Value::as_str).unwrap_or(""));
+                        let known = wid.is_empty() || app.walls.lock().unwrap().get(wid).is_some();
+                        if let (Some(m), true) = (app.monitors.iter().find(|m| m.id == mid).cloned(), known) {
+                            if m.primary {
+                                app.st.wallpaper = wid.to_string();
+                            } else if wid.is_empty() {
+                                app.st.monitor_walls.remove(&m.id);
+                            } else {
+                                app.st.monitor_walls.insert(m.id.clone(), wid.to_string());
+                            }
+                            reload = true;
+                            relayout = true;
+                            msg = Some(format!("Wallpaper for {} chosen.{}", m.name, if app.st.applied { "" } else { " Press Apply to put it on your desktop." }));
+                        }
+                    }
+                    "fake_monitors" => {
+                        // Test hook: only honoured when the app was started with PLINTH_FAKE_MONITORS.
+                        let spec = v.get("spec").and_then(Value::as_str).unwrap_or("").to_string();
+                        let mut f = app.fake.lock().unwrap();
+                        if f.is_some() {
+                            *f = Some(spec);
+                        }
+                    }
+                    "identify" => {
+                        identify.clear();
+                        let fake = app.fake.lock().unwrap().is_some();
+                        for (i, m) in app.monitors.iter().enumerate() {
+                            let (sw, sh) = if fake { (240u32, 160u32) } else { ((360.0 * m.scale()) as u32, (240.0 * m.scale()) as u32) };
+                            let (px, py) = if fake { (60 + m.x / 4 + 420, 60 + m.y / 4 + 220) } else { (m.x + (m.width_px as i32 - sw as i32) / 2, m.y + (m.height_px as i32 - sh as i32) / 2) };
+                            use tao::platform::windows::WindowBuilderExtWindows;
+                            let win = WindowBuilder::new()
+                                .with_title("Plinth identify")
+                                .with_decorations(false)
+                                .with_always_on_top(true)
+                                .with_resizable(false)
+                                .with_skip_taskbar(true)
+                                .with_inner_size(tao::dpi::PhysicalSize::new(sw, sh))
+                                .with_position(tao::dpi::PhysicalPosition::new(px, py))
+                                .build(target)
+                                .ok();
+                            if let Some(win) = win {
+                                let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+                                let html = format!("<body style=\"margin:0;height:100vh;display:grid;place-items:center;align-content:center;background:#10131c;color:#7cf2c8;font-family:'Segoe UI',sans-serif;border:3px solid #7cf2c8;box-sizing:border-box;overflow:hidden\"><div style=\"font-size:96px;font-weight:700;line-height:1\">{}</div><div style=\"font-size:16px;color:#fff;margin-top:8px\">{}{}</div></body>", i + 1, esc(&m.name), if m.primary { " (primary)" } else { "" });
+                                if let Ok(wv) = WebViewBuilder::new().with_html(html).build(&win) {
+                                    identify.push((win, wv));
+                                }
+                            }
+                        }
+                        let p = proxy.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(2500));
+                            let _ = p.send_event(Ev::IdentifyEnd);
+                        });
+                        msg = Some("Look at your screens: each shows its number.".into());
                     }
                     "security_scan" => {
                         // The scan runs off the event loop (PowerShell can take a few seconds); the result comes back as Ev::Sec.
@@ -653,12 +949,13 @@ fn main() {
                     }
                     _ => {}
                 }
-                if reload {
-                    if let Some(l) = layer.as_ref() {
-                        let _ = l.webview.load_html(&app.layer_html());
+                if reload || relayout {
+                    if relayout {
+                        app.recompute();
                     }
+                    sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
                 }
-                sampler.set_active(layer.is_some() && !app.st.safe && !app.paused);
+                sampler.set_active(!layers.is_empty() && !app.st.safe && !app.paused);
                 if cmd != "state" {
                     println!("hub: {cmd} handled");
                     app.persist();
@@ -670,7 +967,8 @@ fn main() {
                 let _ = proxy.send_event(Ev::Deliver { wid, json });
             }
             Event::UserEvent(Ev::Deliver { wid, json }) => {
-                if let Some(l) = layer.as_ref() {
+                let mon = app.resolved.iter().find(|r| r.widget == wid).map(|r| r.monitor.clone());
+                if let Some(l) = mon.and_then(|m| layers.get(&m)) {
                     let id = Value::String(wid).to_string();
                     let _ = l.webview.evaluate_script(&format!("__deliver({id},{json})"));
                 }
@@ -679,8 +977,8 @@ fn main() {
                 app.paused = on;
                 pause_log.push(on);
                 println!("governor: widgets {}", if on { "paused (fullscreen app, battery or remote session)" } else { "resumed" });
-                sampler.set_active(layer.is_some() && !app.st.safe && !app.paused);
-                if let Some(l) = layer.as_ref() {
+                sampler.set_active(!layers.is_empty() && !app.st.safe && !app.paused);
+                for l in layers.values() {
                     let _ = l.webview.evaluate_script(&format!("__pause({on})"));
                 }
                 reply(&app, &hub_view, None);
@@ -726,9 +1024,7 @@ fn main() {
                 if let Some(id) = last_id {
                     app.st.wallpaper = id;
                     if app.st.applied {
-                        if let Some(l) = layer.as_ref() {
-                            let _ = l.webview.load_html(&app.layer_html());
-                        }
+                        sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
                     }
                     app.persist();
                 }
@@ -741,6 +1037,20 @@ fn main() {
                 println!("hub: drop handled ({added} added)");
                 reply(&app, &hub_view, Some(&m));
             }
+            Event::UserEvent(Ev::Monitors(list)) => {
+                let (gone, came) = mons::diff_monitors(&app.monitors, &list);
+                println!("monitors changed: gone [{}], new [{}]", gone.join(", "), came.join(", "));
+                app.monitors = list;
+                app.park_all = false; // a real display change returns to the saved layout
+                app.recompute();
+                sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                let parked = app.resolved.iter().filter(|r| r.parked).count();
+                println!("layout recomputed: {} monitors, {} widgets, {} parked, {} layers", app.monitors.len(), app.resolved.len(), parked, layers.len());
+                sampler.set_active(!layers.is_empty() && !app.st.safe && !app.paused);
+                let note = if !gone.is_empty() && parked > 0 { Some(format!("{} disconnected: {parked} widget(s) moved to a visible monitor and will return when it reconnects.", gone.join(", "))) } else if !came.is_empty() { Some(format!("{} connected.", came.join(", "))) } else { None };
+                reply(&app, &hub_view, note.as_deref());
+            }
+            Event::UserEvent(Ev::IdentifyEnd) => identify.clear(),
             Event::UserEvent(Ev::Save) => app.persist(),
             Event::UserEvent(Ev::Menu(name)) => match name.as_str() {
                 "open" => {
@@ -780,11 +1090,17 @@ fn main() {
                     println!("autotest: fullscreen test window closed");
                 }
                 9 => {
-                    if let Some(l) = layer.as_ref() {
+                    if let Some(l) = app.primary_id().and_then(|id| layers.get(&id)) {
                         let vp = video_probe.clone();
                         let js = "(()=>{const v=document.getElementById('wv');return v?JSON.stringify({t:v.currentTime,paused:v.paused,ready:v.readyState,err:v.error?v.error.code:0,w:v.videoWidth}):'none'})()";
                         let _ = l.webview.evaluate_script_with_callback(js, move |r| *vp.lock().unwrap() = Some(r));
                     }
+                }
+                21..=25 | 27 | 28 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                26 => {
+                    let code = monitor_report(&app, &mon_snaps);
+                    app.persist();
+                    std::process::exit(code);
                 }
                 2 => win::show_desktop(),
                 3 => {
@@ -808,6 +1124,64 @@ fn main() {
             _ => {}
         }
     });
+}
+
+struct MonSnap {
+    layers: Vec<String>,
+    resolved: Vec<(String, String, bool)>,
+    homes: Vec<(String, String)>,
+}
+
+impl MonSnap {
+    fn take(app: &App, layers: &HashMap<String, Layer>) -> MonSnap {
+        let mut l: Vec<String> = layers.keys().cloned().collect();
+        l.sort();
+        let mut r: Vec<(String, String, bool)> = app.resolved.iter().map(|r| (r.widget.clone(), r.monitor.clone(), r.parked)).collect();
+        r.sort();
+        let mut h: Vec<(String, String)> = app.st.placements.iter().map(|p| (p.widget.clone(), p.home.clone())).collect();
+        h.sort();
+        MonSnap { layers: l, resolved: r, homes: h }
+    }
+
+    fn on(&self, widget: &str) -> Option<(&str, bool)> {
+        self.resolved.iter().find(|r| r.0 == widget).map(|r| (r.1.as_str(), r.2))
+    }
+}
+
+/// Report for the fake-monitor lifecycle autotest (PLINTH_AUTOTEST_MON). Snapshots: A own monitors, B monitor B unplugged,
+/// C monitor B replugged, D park all, E park all off, F positions reset, G reset undone.
+fn monitor_report(app: &App, snaps: &[MonSnap]) -> i32 {
+    println!("\n===== Monitor lifecycle =====");
+    for (n, s) in ["A own monitors", "B B unplugged", "C B replugged", "D park all", "E park all off", "F reset", "G undo"].iter().zip(snaps) {
+        println!("   {n}: layers {:?}\n      shown {:?}\n      homes {:?}", s.layers, s.resolved, s.homes);
+    }
+    println!("   layout log entries: {}", app.layout_log.len());
+    let (clock, card, vitals, notes) = ("com.plinth.clock", "com.plinth.buildcard", "com.plinth.pcvitals", "com.plinth.notes");
+    let g = |i: usize| snaps.get(i);
+    let checks: Vec<(&str, bool)> = vec![
+        ("all seven snapshots were taken", snaps.len() == 7),
+        ("A: clock and build card are on monitor B, vitals on C, notes on the primary, none parked", g(0).map_or(false, |s| s.on(clock) == Some(("FAKE#B", false)) && s.on(card) == Some(("FAKE#B", false)) && s.on(vitals) == Some(("FAKE#C", false)) && s.on(notes) == Some(("FAKE#A", false)))),
+        ("A: one layer window per monitor that has something to draw (3)", g(0).map_or(false, |s| s.layers == vec!["FAKE#A", "FAKE#B", "FAKE#C"])),
+        ("B: with monitor B unplugged its widgets are parked on the primary, still visible", g(1).map_or(false, |s| s.on(clock) == Some(("FAKE#A", true)) && s.on(card) == Some(("FAKE#A", true)) && s.on(vitals) == Some(("FAKE#C", false)))),
+        ("B: the layer for monitor B was closed (2 layers)", g(1).map_or(false, |s| s.layers == vec!["FAKE#A", "FAKE#C"])),
+        ("B: saved home monitors did not change while parked", g(1).map_or(false, |s| Some(&s.homes) == g(0).map(|a| &a.homes))),
+        ("C: after replugging B the exact original layout is back", g(2).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved) && Some(&s.layers) == g(0).map(|a| &a.layers))),
+        ("C: saved placements are identical to before the unplug", g(2).map_or(false, |s| Some(&s.homes) == g(0).map(|a| &a.homes))),
+        ("D: Bring all widgets to the primary monitor parks every widget there and keeps the saved layout", g(3).map_or(false, |s| s.resolved.iter().all(|r| r.1 == "FAKE#A") && s.resolved.iter().filter(|r| r.0 != notes).all(|r| r.2) && Some(&s.homes) == g(0).map(|a| &a.homes))),
+        ("E: turning it off restores the saved layout", g(4).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved))),
+        ("F: Reset widget positions sends every widget to the primary monitor's default places", g(5).map_or(false, |s| s.resolved.iter().all(|r| r.1 == "FAKE#A" && !r.2))),
+        ("G: Undo brings the previous assignments back", g(6).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved) && Some(&s.homes) == g(0).map(|a| &a.homes))),
+        ("the saved home of the clock stayed monitor B in the file the app writes", app.st.placements.iter().any(|p| p.widget == clock && p.home == "FAKE#B")),
+    ];
+    let mut failed = 0;
+    for (n, ok) in &checks {
+        println!("[{}] {n}", if *ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed += 1;
+        }
+    }
+    println!("\n{} of {} checks passed", checks.len() - failed, checks.len());
+    i32::from(failed != 0)
 }
 
 fn total_activity(app: &App) -> usize {

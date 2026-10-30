@@ -17,16 +17,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 <script>
 // Trusted layer page. A message's identity is the iframe it came from, never anything inside the message.
 const widgets = __WIDGETS__;
-const LAYOUT = {
-  'com.plinth.clock':    { left: '4%',  top: '7%',     width: 360, height: 118 },
-  'com.plinth.pcvitals': { right: '4%', top: '7%',     width: 400, height: 250 },
-  'com.plinth.buildcard':{ right: '4%', bottom: '14%', width: 400, height: 190 },
-  'com.plinth.notes':    { left: '4%',  bottom: '14%', width: 330, height: 200 },
-};
 const frames = {};   // widget id -> { frame, origin }
-let stack = 0;
 for (const w of widgets) {
-  const pos = LAYOUT[w.id] || { left: (4 + 22 * (stack++)) + '%', top: '40%', width: 300, height: 160 };
+  const pos = { left: w.x, top: w.y, width: w.w, height: w.h };
   const d = document.createElement('div');
   d.className = 'slot';
   for (const [k, v] of Object.entries(pos)) d.style[k] = typeof v === 'number' ? v + 'px' : v;
