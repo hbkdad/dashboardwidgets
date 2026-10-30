@@ -826,6 +826,7 @@ version = "0.3.0"
 dependencies = [
  "plinth-core",
  "plinth-host",
+ "plinth-proxy",
  "serde_json",
  "tao",
  "wry",
@@ -1517,6 +1518,10 @@ dependencies = [
  "plinth-core",
  "serde_json",
 ]
+
+[[package]]
+name = "plinth-proxy"
+version = "0.3.0"
 
 [[package]]
 name = "potential_utf"

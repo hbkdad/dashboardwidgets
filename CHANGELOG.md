@@ -3,6 +3,11 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Added
+- `plinth-proxy` crate (std only): deny-by-default HTTPS CONNECT proxy with allow-list policy, private-address guard, request limits and a log; 8 tests.
+- `Host::allowed_destinations()` (union of granted net.fetch hosts) with a test; host-demo `PLINTH_PROXY=1` runs against the real proxy (3 extra checks).
+### Security
+- Spike D: with WebView2 forced through `plinth-proxy`, 0 direct connections and 0 allowed tunnels in 4 of 4 end-to-end runs; closes the bare-connection gap found in v0.3.0 for the tested attack. Allow path over real HTTPS and per-widget attribution remain untested.
 
 ## [0.3.0] - 2026-10-30
 End-to-end host demo, decisions log, license, and a security correction with a validated mitigation.

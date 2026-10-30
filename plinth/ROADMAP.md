@@ -11,7 +11,7 @@ Mirrors `../design/business-and-roadmap.md` §5. Targets are planning assumption
 - Skipped by decision: hands-on Seelen UI test.
 
 - [x] host-demo: plinth-host + WebView2 end to end, 11/11 checks (see `apps/host-demo/RESULTS.md`)
-- [ ] Spike D: local deny-by-default proxy (per-widget attribution, SmartScreen allow-list, HTTPS/WebSocket, failure mode) to close the bare-connection gap (decision D8)
+- [x] Spike D: `plinth-proxy` deny-by-default proxy built; 4/4 end-to-end runs with 0 direct connections (see `apps/host-demo/RESULTS.md`). Still to do: HTTPS allow-path test, per-widget attribution, `wss`, WebView2 service traffic allow-list, production wiring (start proxy with the host, update allow-list on grant change)
 - [ ] Name clearance and public brand (decision D2)
 
 ## Alpha (MVP, about 4–6 months after Phase 0)

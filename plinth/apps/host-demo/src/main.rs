@@ -72,11 +72,21 @@ fn main() {
 
     let hits = Arc::new(Mutex::new(Vec::<String>::new()));
     let port = start_server(hits.clone());
-    // Experiment (PLINTH_PROXY=1): force ALL WebView2 network traffic through a second local listener standing in for a
-    // Plinth-controlled proxy. If the design works, nothing (not even a bare connection) reaches the destination server
-    // directly; everything the widgets attempt shows up at the proxy, where policy can deny it.
+    // PLINTH_PROXY=1 forces ALL WebView2 traffic through the real plinth-proxy (deny by default, allow-list built from
+    // the broker's granted net.fetch hosts). PLINTH_PROXY=standin uses the earlier recording listener instead.
+    let proxy_mode = std::env::var("PLINTH_PROXY").ok();
     let proxy_hits = Arc::new(Mutex::new(Vec::<String>::new()));
-    let proxy_port = if std::env::var("PLINTH_PROXY").is_ok() { Some(start_server(proxy_hits.clone())) } else { None };
+    let proxy_policy = Arc::new(Mutex::new(plinth_proxy::Policy::new()));
+    let proxy_log = Arc::new(Mutex::new(plinth_proxy::Log::default()));
+    let proxy_port = match proxy_mode.as_deref() {
+        None => None,
+        Some("standin") => Some(start_server(proxy_hits.clone())),
+        Some(_) => {
+            let dests = host.lock().unwrap().allowed_destinations();
+            proxy_policy.lock().unwrap().set_allowed(dests.into_iter().map(|(h, p)| plinth_proxy::Dest { host: h, port: p }).collect());
+            Some(plinth_proxy::start(proxy_policy.clone(), proxy_log.clone()).expect("proxy"))
+        }
+    };
 
     let widgets_json = {
         let h = host.lock().unwrap();
@@ -140,15 +150,39 @@ fn main() {
                 let _ = webview.evaluate_script(&format!("__deliver({slot},{json})"));
             }
             Event::UserEvent(Ev::Finish) => {
-                let code = report(&report_host.lock().unwrap(), &hits.lock().unwrap());
+                let mut code = report(&report_host.lock().unwrap(), &hits.lock().unwrap());
                 let ph = proxy_hits.lock().unwrap();
-                if proxy_port.is_some() {
-                    println!("
-===== Requests that arrived at the PROXY (would be allow/deny-checked by core) =====");
+                if proxy_mode.as_deref() == Some("standin") {
+                    println!("\n===== Requests that arrived at the stand-in listener =====");
                     for h in ph.iter() {
                         println!("{h}");
                     }
-                    println!("({} proxy requests; destination server saw {} direct hit(s) above)", ph.len(), hits.lock().unwrap().len());
+                } else if proxy_port.is_some() {
+                    let entries = proxy_log.lock().unwrap().entries();
+                    println!("\n===== plinth-proxy log (every attempt that reached the proxy) =====");
+                    for e in &entries {
+                        println!("   #{:<3} {:<8} {:<40} {:?}", e.seq, e.method, e.target, e.verdict);
+                    }
+                    let direct = hits.lock().unwrap().len();
+                    let allowed = entries.iter().filter(|e| e.verdict == plinth_proxy::Verdict::Allow).count();
+                    // The hostile widget tried to navigate to the test server (127.0.0.1:<port>). The attacker's address must
+                    // never appear in a request the proxy could forward: it is blocked in the browser before any request.
+                    let denied_selfnav = entries.iter().all(|e| !e.target.contains("127.0.0.1"));
+                    println!("\n===== Proxy checks =====");
+                    let mut fails = 0;
+                    for (name, ok) in [
+                        ("destination server saw 0 direct connections (incl. bare connections)", direct == 0),
+                        ("proxy allowed 0 tunnels (nothing was granted network access)", allowed == 0),
+                        ("the hostile widget's attacker address never reached the proxy as a request", denied_selfnav),
+                    ] {
+                        println!("[{}] {name}", if ok { "PASS" } else { "FAIL" });
+                        if !ok {
+                            fails += 1;
+                        }
+                    }
+                    if fails > 0 {
+                        code = 1;
+                    }
                 }
                 std::process::exit(code);
             }
