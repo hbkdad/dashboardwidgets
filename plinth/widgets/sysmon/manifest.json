@@ -1,0 +1,5 @@
+{ "format": 1, "id": "com.plinth.sysmon", "name": "System monitor", "version": "1.0.0", "type": "widget",
+  "permissions": [
+    { "id": "system.cpu", "reason": "Shows how busy your processor is" },
+    { "id": "system.ram", "reason": "Shows how much memory is in use" }
+  ] }

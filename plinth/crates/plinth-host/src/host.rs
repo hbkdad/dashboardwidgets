@@ -17,6 +17,23 @@ pub enum HostError {
     Denied(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct PermissionInfo {
+    pub id: PermissionId,
+    pub reason: String,
+    pub hosts: Vec<String>,
+    pub granted: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct WidgetInfo {
+    pub slot: usize,
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub permissions: Vec<PermissionInfo>,
+}
+
 pub struct Response {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -136,6 +153,44 @@ impl Host {
         v.sort();
         v.dedup();
         v
+    }
+
+    /// Everything a UI needs to render the Permission Center: installed widgets with declared permissions and grant state.
+    pub fn describe(&self) -> Vec<WidgetInfo> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, p)| {
+                let p = p.as_ref()?;
+                let m = &p.manifest;
+                Some(WidgetInfo {
+                    slot,
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    version: m.version.clone(),
+                    permissions: m
+                        .permissions
+                        .iter()
+                        .map(|d| PermissionInfo { id: d.id, reason: d.reason.clone(), hosts: d.hosts.clone(), granted: self.broker.is_granted(&m.id, d.id) })
+                        .collect(),
+                })
+            })
+            .collect()
+    }
+
+    /// Widget storage for persistence by the app (per widget id: key -> value).
+    pub fn storage_snapshot(&self) -> HashMap<String, HashMap<String, String>> {
+        self.storage.clone()
+    }
+
+    /// Restores storage for installed widgets only; values over the quotas are dropped.
+    pub fn restore_storage(&mut self, data: HashMap<String, HashMap<String, String>>) {
+        for (id, map) in data {
+            if self.slots.iter().flatten().any(|p| p.manifest.id == id) {
+                let ok: HashMap<String, String> = map.into_iter().filter(|(k, v)| k.len() <= 64 && v.len() <= 8 * 1024).take(256).collect();
+                self.storage.insert(id, ok);
+            }
+        }
     }
 
     pub fn activity(&self, id: &str) -> Vec<&ActivityEntry> {

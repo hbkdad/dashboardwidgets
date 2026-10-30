@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/plinth-core", "crates/plinth-host", "crates/plinth-proxy", "apps/host-demo", "spikes/layer-probe", "spikes/webview-probe", "spikes/sandbox-probe"]
+members = ["crates/plinth-core", "crates/plinth-host", "crates/plinth-proxy", "apps/host-demo", "apps/plinth-app", "spikes/layer-probe", "spikes/webview-probe", "spikes/sandbox-probe"]
 
 [workspace.package]
 edition = "2021"
-version = "0.4.0"
+version = "0.5.0"
 license = "Apache-2.0"

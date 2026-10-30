@@ -240,4 +240,20 @@ mod tests {
         h.set_safe_mode(true);
         assert!(h.allowed_destinations().is_empty());
     }
+
+    #[test]
+    fn describe_reports_declared_permissions_and_grant_state() {
+        let mut h = host();
+        h.install(pkg("com.example.w", ALL)).unwrap();
+        h.grant("com.example.w", PermissionId::SystemCpu).unwrap();
+        let d = h.describe();
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].slot, 0);
+        let cpu = d[0].permissions.iter().find(|p| p.id == PermissionId::SystemCpu).unwrap();
+        let net = d[0].permissions.iter().find(|p| p.id == PermissionId::NetFetch).unwrap();
+        assert!(cpu.granted && !net.granted);
+        assert_eq!(net.hosts, vec!["api.weather.example"]);
+        h.revoke("com.example.w", PermissionId::SystemCpu);
+        assert!(!h.describe()[0].permissions.iter().find(|p| p.id == PermissionId::SystemCpu).unwrap().granted);
+    }
 }
