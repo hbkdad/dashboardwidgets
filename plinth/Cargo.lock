@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "layer-probe"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "libc"
@@ -1493,7 +1493,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plinth-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1648,7 +1648,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-probe"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "tao",
  "wry",
@@ -2239,7 +2239,7 @@ dependencies = [
 
 [[package]]
 name = "webview-probe"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "raw-window-handle",
  "wry",
