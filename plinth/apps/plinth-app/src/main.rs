@@ -9,6 +9,7 @@
 //! Dev switches: PLINTH_NO_ATTACH=1 (use a normal window instead of the desktop layer), PLINTH_STATE=<file>,
 //! PLINTH_AUTOTEST=<seconds> (apply, exercise, verify, print a report, exit with 0/1).
 
+mod hw;
 mod state;
 mod win;
 
@@ -27,15 +28,18 @@ use tao::platform::windows::WindowExtWindows;
 use tao::window::{Window, WindowBuilder};
 use wry::{WebContext, WebView, WebViewBuilder};
 
+static HUB_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 const HUB_HTML: &str = include_str!("hub.html");
 const LAYER_HTML: &str = include_str!("layer.html");
 
 enum Ev {
     Hub(String),
-    Layer { slot: usize, msg: String },
-    Deliver { slot: usize, json: String },
+    Layer { wid: String, msg: String },
+    Deliver { wid: String, json: String },
     Save,
     Menu(String),
+    Pause(bool),
     Auto(u8),
 }
 
@@ -66,6 +70,7 @@ fn permission_label(p: PermissionId) -> &'static str {
         PermissionId::SystemGpu => "Graphics load",
         PermissionId::SystemDisk => "Disk use",
         PermissionId::SystemNetwork => "Network speed",
+        PermissionId::SystemInfo => "Your PC's parts list",
         PermissionId::MediaControl => "Media controls",
         PermissionId::CalendarRead => "Your calendar",
         PermissionId::NetFetch => "Internet access",
@@ -81,6 +86,7 @@ struct App {
     plog: Arc<Mutex<Log>>,
     proxy_port: u16,
     beacon: bool,
+    paused: bool,
 }
 
 impl App {
@@ -106,7 +112,7 @@ impl App {
         let widgets: Vec<Value> = info
             .iter()
             .map(|w| {
-                json!({ "id": w.id, "name": w.name, "version": w.version, "slot": w.slot, "first": w.id.starts_with("com.plinth."),
+                json!({ "id": w.id, "name": w.name, "version": w.version, "slot": w.slot, "first": w.trusted,
                     "perms": w.permissions.iter().map(|p| json!({ "k": p.id.as_str(), "label": permission_label(p.id), "reason": p.reason, "hosts": p.hosts, "on": p.granted })).collect::<Vec<_>>() })
             })
             .collect();
@@ -131,18 +137,26 @@ impl App {
             .take(40)
             .map(|e| json!({ "seq": e.seq, "method": e.method, "target": e.target, "verdict": if e.verdict == Verdict::Allow { "Allow" } else { "Deny" } }))
             .collect();
-        let cost = impact::scene_cost(0, n);
-        json!({ "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "widgets": widgets, "activity": activity,
-            "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct) }, "msg": msg })
+        let shared = info.iter().filter(|w| w.trusted).count();
+        let cost = impact::scene_cost_with_motion(shared, n - shared, self.st.motion);
+        json!({ "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+            "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
     }
 
     fn layer_html(&self) -> String {
         let s = scene(&self.st.scene);
-        let widgets: Vec<Value> = if self.st.safe { vec![] } else { self.host.lock().unwrap().installed().into_iter().map(|(slot, id)| json!({ "slot": slot, "id": id })).collect() };
+        let widgets: Vec<Value> = if self.st.safe { vec![] } else { self.host.lock().unwrap().describe().into_iter().map(|w| json!({ "id": w.id, "slot": w.slot, "trusted": w.trusted })).collect() };
         let banner = if self.st.safe { r#"<div style="position:fixed;left:50%;top:6%;transform:translateX(-50%);padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.55);border:1px solid #ffb454;color:#ffb454;font:600 14px system-ui">Safe mode: widgets are paused</div>"# } else { "" };
         let beacon = if self.beacon { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
-        LAYER_HTML
+        let mut html = LAYER_HTML.to_string();
+        // Cost experiments (and the basis of the Performance mode setting): PLINTH_NO_ANIM drops the wallpaper drift,
+        // PLINTH_NO_BLUR replaces the glass blur with a flat translucent panel.
+        if std::env::var_os("PLINTH_NO_BLUR").is_some() {
+            html = html.replace("backdrop-filter:blur(22px) saturate(1.35);", "");
+        }
+        html
+            .replace("__DRIFT__", if self.st.motion && std::env::var_os("PLINTH_NO_ANIM").is_none() { "animation:drift 40s ease-in-out infinite alternate" } else { "" })
             .replace("__WALL__", s.wall)
             .replace("__MID__", s.mid)
             .replace("__GLASS__", s.glass)
@@ -190,15 +204,16 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebCont
         .with_bounds(wry::Rect { position: wry::dpi::PhysicalPosition::new(0, 0).into(), size: wry::dpi::PhysicalSize::new(w, h).into() })
         .with_ipc_handler(move |req: wry::http::Request<String>| {
             let Ok(v) = serde_json::from_str::<Value>(req.body()) else { return };
-            if let (Some(slot), Some(msg)) = (v.get("slot").and_then(Value::as_u64), v.get("msg").and_then(Value::as_str)) {
-                let _ = ipc_proxy.send_event(Ev::Layer { slot: slot as usize, msg: msg.to_string() });
+            if let (Some(wid), Some(msg)) = (v.get("wid").and_then(Value::as_str), v.get("msg").and_then(Value::as_str)) {
+                let _ = ipc_proxy.send_event(Ev::Layer { wid: wid.to_string(), msg: msg.to_string() });
             }
         });
-    for slot in 0..plinth_host::THIRD_PARTY_SLOTS {
+    let schemes: Vec<String> = (0..plinth_host::THIRD_PARTY_SLOTS).map(Host::scheme_for_slot).chain(std::iter::once(plinth_host::TRUSTED_SCHEME.to_string())).collect();
+    for scheme in schemes {
         let h = host.clone();
-        // The slot is identified by the protocol the request arrived on, never by anything the page controls.
-        b = b.with_custom_protocol(Host::scheme_for_slot(slot), move |_id, req| {
-            let name = format!("{}.localhost", Host::scheme_for_slot(slot));
+        // The origin is identified by the protocol the request arrived on, never by anything the page controls.
+        b = b.with_custom_protocol(scheme.clone(), move |_id, req| {
+            let name = format!("{scheme}.localhost");
             let path = req.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_else(|| "/".into());
             let r = h.lock().unwrap().serve(&name, &path);
             let mut resp = wry::http::Response::builder().status(r.status);
@@ -214,6 +229,17 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebCont
     Some(Layer { _window: window, webview })
 }
 
+fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> WebView {
+    let p = proxy.clone();
+    WebViewBuilder::new_with_web_context(ctx)
+        .with_html(HUB_HTML)
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            let _ = p.send_event(Ev::Hub(req.body().clone()));
+        })
+        .build(window)
+        .expect("hub webview")
+}
+
 fn main() {
     let instance = format!("Local\\PlinthApp-{}", std::env::var("PLINTH_STATE").unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>());
     if !win::first_instance(&instance) {
@@ -225,7 +251,8 @@ fn main() {
 
     // ---- state, host, widgets ----
     let mut st = State::load();
-    let host = Arc::new(Mutex::new(Host::new(Box::new(win::SystemProvider::new()))));
+    let sampler = hw::Sampler::start();
+    let host = Arc::new(Mutex::new(Host::new(Box::new(sampler.provider()))));
     {
         let mut h = host.lock().unwrap();
         let dir = widgets_dir();
@@ -235,9 +262,17 @@ fn main() {
             match Package::from_dir(&d) {
                 Ok(p) => {
                     let id = p.manifest.id.clone();
-                    match h.install(p) {
-                        Ok(slot) => println!("installed {id} in slot {slot}"),
-                        Err(e) => eprintln!("cannot install {id}: {e:?}"),
+                    // Only widgets shipped with the app (ids under com.plinth.) join the shared trusted origin.
+                    if id.starts_with("com.plinth.") {
+                        match h.install_trusted(p) {
+                            Ok(()) => println!("installed {id} (trusted shared origin)"),
+                            Err(e) => eprintln!("cannot install {id}: {e:?}"),
+                        }
+                    } else {
+                        match h.install(p) {
+                            Ok(slot) => println!("installed {id} in isolated slot {slot}"),
+                            Err(e) => eprintln!("cannot install {id}: {e:?}"),
+                        }
                     }
                 }
                 Err(e) => eprintln!("skipping {}: {e:?}", d.display()),
@@ -271,7 +306,7 @@ fn main() {
     let proxy_port = plinth_proxy::start(policy.clone(), plog.clone()).expect("proxy");
     println!("network proxy on 127.0.0.1:{proxy_port}");
     st.first_run = st.first_run && autotest.is_none();
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some() };
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false };
     app.sync_proxy();
     if app.st.first_run {
         app.persist(); // creates the state file so the welcome sheet shows once
@@ -283,14 +318,7 @@ fn main() {
     let hub_window = WindowBuilder::new().with_title("Plinth").with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0)).build(&event_loop).unwrap();
     let hub_id = hub_window.id();
     let mut hub_ctx = WebContext::new(Some(state::local_dir().join("wv-hub")));
-    let hub_proxy = proxy.clone();
-    let hub_view = WebViewBuilder::new_with_web_context(&mut hub_ctx)
-        .with_html(HUB_HTML)
-        .with_ipc_handler(move |req: wry::http::Request<String>| {
-            let _ = hub_proxy.send_event(Ev::Hub(req.body().clone()));
-        })
-        .build(&hub_window)
-        .expect("hub webview");
+    let mut hub_view: Option<WebView> = Some(build_hub(&hub_window, &mut hub_ctx, &proxy));
     // Tray icon + menu (background mode: closing the hub hides it; Quit in the tray exits).
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     let menu = Menu::new();
@@ -319,12 +347,41 @@ fn main() {
     let mut layer_ctx = WebContext::new(Some(state::local_dir().join("wv-layer")));
     let mut layer: Option<Layer> = None;
 
+    {
+        // Hub revival: if the hub was hidden (its web view released) and something makes the window visible again, such as a
+        // second launch, ask the event loop to rebuild it.
+        let p = proxy.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(400));
+            if HUB_HIDDEN.load(std::sync::atomic::Ordering::Relaxed) && win::hub_visible() {
+                let _ = p.send_event(Ev::Menu("open".to_string()));
+                std::thread::sleep(Duration::from_millis(800));
+            }
+        });
+    }
+    {
+        // Pause governor: poll the situation every 2 s; the decision logic is plinth-core's tested `should_pause`.
+        let p = proxy.clone();
+        let own = autotest.is_some();
+        std::thread::spawn(move || {
+            let policy = plinth_core::Policy::default();
+            let mut last = false;
+            loop {
+                let now = plinth_core::should_pause(&win::system_state(own), &policy);
+                if now != last {
+                    last = now;
+                    let _ = p.send_event(Ev::Pause(now));
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        });
+    }
     let tick = proxy.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(30));
         let _ = tick.send_event(Ev::Save);
     });
-    if let Some(secs) = autotest {
+    if autotest.is_some() {
         let p = proxy.clone();
         std::thread::spawn(move || {
             let hub = |p: &EventLoopProxy<Ev>, j: &str| {
@@ -334,14 +391,18 @@ fn main() {
             nap(2);
             hub(&p, r#"{"cmd":"apply"}"#); // same code path as pressing Apply in the hub
             nap(6);
-            hub(&p, r#"{"cmd":"grant","id":"com.plinth.sysmon","perm":"system.cpu","on":false}"#); // user revokes CPU
+            hub(&p, r#"{"cmd":"grant","id":"com.plinth.pcvitals","perm":"system.cpu","on":false}"#); // user revokes CPU
             nap(5);
             let _ = p.send_event(Ev::Auto(5)); // snapshot activity count
             hub(&p, r#"{"cmd":"safe","on":true}"#);
             nap(5);
             let _ = p.send_event(Ev::Auto(6)); // compare: nothing may run in safe mode
             hub(&p, r#"{"cmd":"safe","on":false}"#);
-            nap(secs.saturating_sub(24).max(2));
+            nap(2);
+            let _ = p.send_event(Ev::Auto(7)); // open a fullscreen test window (the "game")
+            nap(6);
+            let _ = p.send_event(Ev::Auto(8)); // close it
+            nap(6);
             let _ = p.send_event(Ev::Auto(2)); // show desktop
             nap(2);
             let _ = p.send_event(Ev::Auto(3)); // sample + restore
@@ -351,6 +412,9 @@ fn main() {
     }
     let mut auto_visible: Option<bool> = None;
     let mut safe_count: (usize, usize) = (0, 0);
+    let mut pause_log: Vec<bool> = Vec::new();
+    let mut fs_test: Option<Window> = None;
+    let sampler = sampler;
     let mut applied_before_start = app.st.applied;
 
     event_loop.run(move |event, target, control_flow| {
@@ -360,8 +424,17 @@ fn main() {
             layer = create_layer(target, &app, &mut layer_ctx, &proxy);
             println!("restored applied scene {} (layer created: {})", app.st.scene, layer.is_some());
         }
-        let reply = |app: &App, msg: Option<&str>| {
-            let _ = hub_view.evaluate_script(&format!("__onState({})", app.state_json(msg)));
+        // The hub's browser process is released while the hub is hidden (about 200 MB) and rebuilt when it is shown again,
+        // whether from the tray, a second launch, or any other way the window becomes visible.
+        if hub_view.is_none() && hub_window.is_visible() {
+            hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy));
+            HUB_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
+            println!("hub window rebuilt");
+        }
+        let reply = |app: &App, view: &Option<WebView>, msg: Option<&str>| {
+            if let Some(v) = view {
+                let _ = v.evaluate_script(&format!("__onState({})", app.state_json(msg)));
+            }
         };
         match event {
             Event::UserEvent(Ev::Hub(body)) => {
@@ -415,6 +488,11 @@ fn main() {
                         reload = app.st.applied;
                         msg = Some(if app.st.safe { "Safe mode on. Widgets are paused and the network is closed.".into() } else { "Safe mode off.".into() });
                     }
+                    "motion" => {
+                        app.st.motion = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+                        reload = app.st.applied;
+                        msg = Some(if app.st.motion { "Live motion on. It uses more CPU and pauses automatically in games.".into() } else { "Live motion off. Static wallpaper is the cheapest.".into() });
+                    }
                     "firstrun_done" => {
                         app.st.first_run = false;
                         println!("hub: first run acknowledged");
@@ -426,24 +504,40 @@ fn main() {
                         let _ = l.webview.load_html(&app.layer_html());
                     }
                 }
+                sampler.set_active(layer.is_some() && !app.st.safe && !app.paused);
                 if cmd != "state" {
                     println!("hub: {cmd} handled");
                     app.persist();
                 }
-                reply(&app, msg.as_deref());
+                reply(&app, &hub_view, msg.as_deref());
             }
-            Event::UserEvent(Ev::Layer { slot, msg }) => {
-                let json = app.host.lock().unwrap().bridge(slot, &msg);
-                let _ = proxy.send_event(Ev::Deliver { slot, json });
+            Event::UserEvent(Ev::Layer { wid, msg }) => {
+                let json = app.host.lock().unwrap().bridge_widget(&wid, &msg);
+                let _ = proxy.send_event(Ev::Deliver { wid, json });
             }
-            Event::UserEvent(Ev::Deliver { slot, json }) => {
+            Event::UserEvent(Ev::Deliver { wid, json }) => {
                 if let Some(l) = layer.as_ref() {
-                    let _ = l.webview.evaluate_script(&format!("__deliver({slot},{json})"));
+                    let id = Value::String(wid).to_string();
+                    let _ = l.webview.evaluate_script(&format!("__deliver({id},{json})"));
                 }
+            }
+            Event::UserEvent(Ev::Pause(on)) => {
+                app.paused = on;
+                pause_log.push(on);
+                println!("governor: widgets {}", if on { "paused (fullscreen app, battery or remote session)" } else { "resumed" });
+                sampler.set_active(layer.is_some() && !app.st.safe && !app.paused);
+                if let Some(l) = layer.as_ref() {
+                    let _ = l.webview.evaluate_script(&format!("__pause({on})"));
+                }
+                reply(&app, &hub_view, None);
             }
             Event::UserEvent(Ev::Save) => app.persist(),
             Event::UserEvent(Ev::Menu(name)) => match name.as_str() {
                 "open" => {
+                    if hub_view.is_none() {
+                        hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy));
+                    }
+                    HUB_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
                     hub_window.set_visible(true);
                     hub_window.set_minimized(false);
                     hub_window.set_focus();
@@ -463,13 +557,25 @@ fn main() {
                     safe_count.1 = total_activity(&app);
                     println!("autotest: activity entries during safe mode window: {}", safe_count.1 - safe_count.0);
                 }
+                7 => {
+                    use tao::window::Fullscreen;
+                    fs_test = WindowBuilder::new().with_title("Plinth fullscreen test").with_fullscreen(Some(Fullscreen::Borderless(None))).build(target).ok();
+                    if let Some(w) = fs_test.as_ref() {
+                        w.set_focus();
+                    }
+                    println!("autotest: fullscreen test window opened: {}", fs_test.is_some());
+                }
+                8 => {
+                    fs_test = None;
+                    println!("autotest: fullscreen test window closed");
+                }
                 2 => win::show_desktop(),
                 3 => {
                     auto_visible = Some(win::probe_center_is(0x00FF_00FF));
                     win::show_desktop();
                 }
                 _ => {
-                    let code = autotest_report(&app, auto_visible, safe_count);
+                    let code = autotest_report(&app, auto_visible, safe_count, &sampler.snapshot(), &pause_log);
                     app.persist();
                     std::process::exit(code);
                 }
@@ -478,6 +584,8 @@ fn main() {
                 // Background mode: hide the hub, keep the desktop layer and tray running. Quit from the tray menu.
                 app.persist();
                 hub_window.set_visible(false);
+                hub_view = None; // frees the hub's WebView2 process tree
+                HUB_HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
                 println!("hub hidden (running in the background; use the tray icon to reopen or quit)");
             }
             _ => {}
@@ -490,7 +598,7 @@ fn total_activity(app: &App) -> usize {
     h.describe().iter().map(|w| h.activity(&w.id).len()).sum()
 }
 
-fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize)) -> i32 {
+fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize), snap: &hw::Snapshot, pause_log: &[bool]) -> i32 {
     let h = app.host.lock().unwrap();
     println!("\n===== Permission Center log =====");
     let mut allowed: HashMap<String, Vec<String>> = HashMap::new();
@@ -509,16 +617,30 @@ fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize))
         println!("   #{:<3} {:<8} {:<42} {:?}", e.seq, e.method, e.target, e.verdict);
     }
     let has = |m: &HashMap<String, Vec<String>>, id: &str, what: &str| m.get(id).map_or(false, |v| v.iter().any(|a| a == what));
+    println!("\n===== Hardware snapshot (what widgets could read) =====");
+    println!("   cpu:     {}", snap.cpu.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   ram:     {}", snap.ram.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   gpu:     {}", snap.gpu.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   disk:    {}", snap.disk.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   network: {}", snap.network.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   info:    {}", snap.info.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   samples taken: {}", snap.samples);
+    let gpu_nvml = snap.gpu.as_ref().map_or(false, |g| g["source"] == "nvml");
     let checks = [
-        ("sysmon: CPU read allowed (granted at first run)", has(&allowed, "com.plinth.sysmon", "use system.cpu")),
-        ("sysmon: memory read allowed", has(&allowed, "com.plinth.sysmon", "use system.ram")),
+        ("pc vitals: CPU read allowed (granted at first run)", has(&allowed, "com.plinth.pcvitals", "use system.cpu")),
+        ("pc vitals: GPU, memory, network and disk reads allowed", ["use system.gpu", "use system.ram", "use system.network", "use system.disk"].iter().all(|k| has(&allowed, "com.plinth.pcvitals", k))),
+        ("build card: parts list read allowed", has(&allowed, "com.plinth.buildcard", "use system.info")),
         ("notes: storage read allowed", has(&allowed, "com.plinth.notes", "use storage")),
         ("clock: made no permission requests (needs none)", !allowed.contains_key("com.plinth.clock") && !blocked.contains_key("com.plinth.clock")),
-        ("revoke: after the user revoked CPU, sysmon's CPU request was BLOCKED immediately", has(&blocked, "com.plinth.sysmon", "use system.cpu")),
-        ("revoke: only the revoked permission was blocked (memory stayed allowed)", blocked.values().flatten().all(|a| a == "use system.cpu")),
+        ("revoke: after the user revoked CPU, pc vitals' CPU request was BLOCKED immediately", has(&blocked, "com.plinth.pcvitals", "use system.cpu")),
+        ("revoke: only the revoked permission was blocked (the other readings stayed allowed)", blocked.values().flatten().all(|a| a == "use system.cpu")),
         ("safe mode: at most 2 stray widget events while on (iframes were removed)", safe_count.1.saturating_sub(safe_count.0) <= 2),
         ("hub apply command created the layer and persisted state", app.st.applied),
         ("proxy: 0 tunnels allowed (no widget has network access)", entries.iter().all(|e| e.verdict != Verdict::Allow)),
+        ("hardware: CPU 0-100%, RAM total > 0, parts list has a CPU name", snap.cpu.as_ref().map_or(false, |c| (0.0..=100.0).contains(&c["percent"].as_f64().unwrap_or(-1.0))) && snap.ram.as_ref().map_or(false, |r| r["total_mb"].as_u64().unwrap_or(0) > 0) && snap.info.as_ref().map_or(false, |i| !i["cpu_name"].as_str().unwrap_or("").is_empty())),
+        ("hardware: network and disk counters returned data", snap.network.is_some() && snap.disk.is_some()),
+        ("hardware: when NVML is the GPU source, temperature and VRAM are present", !gpu_nvml || snap.gpu.as_ref().map_or(false, |g| g["temp_c"].is_number() && g["vram_total_mb"].is_number())),
+        ("governor: a fullscreen app paused the widgets, and closing it resumed them", pause_log.windows(2).any(|w| w == [true, false])),
         ("layer visible after Show Desktop (beacon pixel read at screen center)", visible == Some(true)),
     ];
     println!("\n===== Checks =====");

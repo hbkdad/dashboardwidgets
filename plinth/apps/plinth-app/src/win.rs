@@ -3,12 +3,8 @@
 //! Progman, ordered directly behind the desktop-icons view (SHELLDLL_DefView). Only WebView2 content stays visible there
 //! (GDI-painted content did not on Windows 11 build 26300).
 
-use plinth_core::PermissionId;
-use plinth_host::DataProvider;
-use serde_json::{json, Value};
 use std::ffi::c_void;
 use std::ptr::null;
-use std::sync::Mutex;
 
 type HWND = isize;
 
@@ -26,6 +22,11 @@ extern "system" {
     fn GetDC(h: HWND) -> isize;
     fn ReleaseDC(h: HWND, dc: isize) -> i32;
     fn GetSystemMetrics(i: i32) -> i32;
+    fn GetForegroundWindow() -> HWND;
+    fn GetWindowRect(h: HWND, r: *mut [i32; 4]) -> i32;
+    fn GetClassNameW(h: HWND, buf: *mut u16, max: i32) -> i32;
+    fn GetWindowThreadProcessId(h: HWND, pid: *mut u32) -> u32;
+    fn IsWindowVisible(h: HWND) -> i32;
     fn ShowWindow(h: HWND, cmd: i32) -> i32;
     fn SetForegroundWindow(h: HWND) -> i32;
 }
@@ -35,23 +36,9 @@ extern "system" {
 }
 #[link(name = "kernel32")]
 extern "system" {
-    fn GetSystemTimes(idle: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
-    fn GlobalMemoryStatusEx(buf: *mut MemoryStatus) -> i32;
+    fn GetSystemPowerStatus(s: *mut [u8; 12]) -> i32;
     fn CreateMutexW(attrs: *const c_void, initial_owner: i32, name: *const u16) -> isize;
     fn GetLastError() -> u32;
-}
-
-#[repr(C)]
-struct MemoryStatus {
-    length: u32,
-    load: u32,
-    total_phys: u64,
-    avail_phys: u64,
-    total_page: u64,
-    avail_page: u64,
-    total_virt: u64,
-    avail_virt: u64,
-    avail_ext: u64,
 }
 
 fn w(s: &str) -> Vec<u16> {
@@ -82,49 +69,6 @@ pub fn attach_to_desktop(hwnd: isize, x: i32, y: i32, width: i32, height: i32) -
         let mut p = [x, y];
         ScreenToClient(progman, &mut p);
         SetWindowPos(hwnd, defview, p[0], p[1], width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW) != 0
-    }
-}
-
-/// Live CPU and memory numbers for the `system.cpu` and `system.ram` permissions.
-pub struct SystemProvider {
-    prev: Mutex<Option<(u64, u64, u64)>>,
-}
-
-impl SystemProvider {
-    pub fn new() -> Self {
-        SystemProvider { prev: Mutex::new(None) }
-    }
-}
-
-impl DataProvider for SystemProvider {
-    fn read(&self, perm: PermissionId) -> Option<Value> {
-        match perm {
-            PermissionId::SystemCpu => {
-                let (mut idle, mut kernel, mut user) = (0u64, 0u64, 0u64);
-                if unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } == 0 {
-                    return None;
-                }
-                let mut prev = self.prev.lock().ok()?;
-                let pct = match *prev {
-                    Some((pi, pk, pu)) => {
-                        let (di, dk, du) = (idle.saturating_sub(pi), kernel.saturating_sub(pk), user.saturating_sub(pu));
-                        let total = dk + du; // kernel time includes idle time
-                        if total == 0 { 0.0 } else { 100.0 * (total.saturating_sub(di)) as f64 / total as f64 }
-                    }
-                    None => 0.0,
-                };
-                *prev = Some((idle, kernel, user));
-                Some(json!({ "percent": (pct * 10.0).round() / 10.0 }))
-            }
-            PermissionId::SystemRam => {
-                let mut m = MemoryStatus { length: std::mem::size_of::<MemoryStatus>() as u32, load: 0, total_phys: 0, avail_phys: 0, total_page: 0, avail_page: 0, total_virt: 0, avail_virt: 0, avail_ext: 0 };
-                if unsafe { GlobalMemoryStatusEx(&mut m as *mut MemoryStatus) } == 0 {
-                    return None;
-                }
-                Some(json!({ "used_mb": (m.total_phys - m.avail_phys) / (1024 * 1024), "total_mb": m.total_phys / (1024 * 1024) }))
-            }
-            _ => None,
-        }
     }
 }
 
@@ -200,4 +144,46 @@ pub fn tray_icon_rgba() -> Vec<u8> {
         }
     }
     px
+}
+
+/// Reads the situation the pause governor needs (plinth-core `should_pause`): fullscreen app in front, battery, remote session.
+/// A window counts as fullscreen when it covers the whole primary screen and is not the desktop or the taskbar.
+/// `include_own` lets the autotest use its own window as the "game".
+pub fn system_state(include_own: bool) -> plinth_core::SystemState {
+    let mut st = plinth_core::SystemState::default();
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg != 0 && IsWindowVisible(fg) != 0 {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(fg, &mut pid);
+            let mut cls = [0u16; 64];
+            let n = GetClassNameW(fg, cls.as_mut_ptr(), 64).max(0) as usize;
+            let class = String::from_utf16_lossy(&cls[..n]);
+            let mut r = [0i32; 4];
+            GetWindowRect(fg, &mut r);
+            let (sw, sh) = (GetSystemMetrics(0), GetSystemMetrics(1));
+            let covers = r[0] <= 0 && r[1] <= 0 && r[2] >= sw && r[3] >= sh;
+            let shell = matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd");
+            st.fullscreen_app = covers && !shell && (include_own || pid != std::process::id());
+        }
+        let mut p = [0u8; 12];
+        if GetSystemPowerStatus(&mut p) != 0 {
+            let (ac, pct) = (p[0], p[2]);
+            if ac == 0 {
+                st.on_battery = true;
+            }
+            st.battery_percent = if pct <= 100 { pct } else { 100 };
+        }
+        st.remote_session = GetSystemMetrics(0x1000) != 0;
+    }
+    st
+}
+
+/// True if the hub window (title "Plinth") exists and is visible. Lets the first instance notice that a second launch
+/// re-showed its hidden hub, so it can rebuild the hub's web view deterministically.
+pub fn hub_visible() -> bool {
+    unsafe {
+        let h = FindWindowW(null(), w("Plinth").as_ptr());
+        h != 0 && IsWindowVisible(h) != 0
+    }
 }

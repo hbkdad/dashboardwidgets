@@ -1,0 +1,8 @@
+{ "format": 1, "id": "com.plinth.pcvitals", "name": "PC Vitals", "version": "1.0.0", "type": "widget",
+  "permissions": [
+    { "id": "system.cpu", "reason": "Shows how busy your processor is and its clock speed" },
+    { "id": "system.gpu", "reason": "Shows graphics card load, temperature, power, fan and video memory" },
+    { "id": "system.ram", "reason": "Shows how much memory is in use" },
+    { "id": "system.network", "reason": "Shows current download and upload speed" },
+    { "id": "system.disk", "reason": "Shows disk activity" }
+  ] }

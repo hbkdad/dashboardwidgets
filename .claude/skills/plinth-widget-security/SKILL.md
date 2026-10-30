@@ -16,7 +16,8 @@ Threat model: a third-party widget is hostile until proven otherwise. It may try
 6. Third-party widgets each get their own origin (`pw<N>.localhost`) with a header CSP and a host `frame-src` allowlist (Spike C: 0 leaked requests, hog contained).
 7. IPC is untrusted: identity comes from the host page's iframe bookkeeping, never from the message; unknown methods and bad JSON return errors.
 8. Safe mode denies every bridge call and serves 403 for third-party widgets.
-9. Setup cards contain no code; ids, versions, rects and accents are validated; unknown widgets are listed as "missing" and shown to the user before install.
+9. The hub never renders widget-, manifest- or network-derived text as HTML: every such string goes through `esc()` before `innerHTML` (regression check: `scripts/hub-xss-check.js`; the hub also carries a CSP). Found in the v0.7.0 security review.
+10. Setup cards contain no code; ids, versions, rects and accents are validated; unknown widgets are listed as "missing" and shown to the user before install.
 
 ## Review checklist for a change
 - Does it add a new bridge method? Add a permission or prove it needs none, add quotas, add tests for denied/undeclared/safe-mode/bad-input.

@@ -1,0 +1,31 @@
+# PC builders and enthusiasts: market, pain points, and what is safely buildable (accessed 2026-10-30)
+
+Question: can Plinth become the all-in-one app custom-PC owners want (live motion wallpapers + system monitoring + security), and what must it do differently from Rainmeter + HWiNFO + Wallpaper Engine + vendor RGB suites? Labels: FACT (read), CLAIM (interested party), INFERENCE (mine), UNVERIFIED / NOT TESTED.
+
+## Audience size and behaviour
+- Community sizes (third-party snapshot from GummySearch, which shut down 2025-11-30, so counts are months old): r/pcmasterrace about 15.9M, r/buildapc about 8.3M, r/battlestations about 5.2M. FACT that those pages say so; weak source. They show a large, vocal audience; they do **not** show willingness to pay. UNVERIFIED.
+- Showing off setups is the culture; desktops and case screens are part of the showcase (INFERENCE from buying guides).
+- Case screens and secondary displays are sold as products (retailer examples: a 1920x440 mini monitor, a Lian Li 8.8-inch universal screen about $82, a 3.5-inch unit about $54). Guides say they are driven by AIDA64, Rainmeter or HWiNFO dashboards. CLAIM (retailers and guides). Adoption numbers: UNVERIFIED.
+
+## Pain points with the incumbent stack
+1. **Vendor RGB/software fragmentation**: SignalRGB's docs say Armoury Crate (AURA Sync) and iCUE keep background services running after the app is closed and claim exclusive control of devices; Corsair publishes a list of programs known to conflict with iCUE (naming SignalRGB and OpenRGB); NZXT CAM conflicts on its own devices; motherboard utilities can reinstall RGB modules during chipset updates. CLAIM/FACT from vendor docs, partly dated. Quantified "bloat" numbers: UNVERIFIED.
+2. **Sensor access depends on kernel drivers with a security history**: Microsoft Defender flags the WinRing0 driver as vulnerable (CVE-2020-14979) and lists LibreHardwareMonitor, HWiNFO, MSI Afterburner and OpenRGB among impacted apps; LibreHardwareMonitor and OpenRGB have moved toward PawnIO, a separately installed signed driver (the projects' claims; not independently confirmed). FACT (Microsoft page, project pull requests).
+3. **Licensing limits on integration**: HWiNFO's shared-memory interface is documented in a forum thread, free-version access is time-limited (12 hours), and open-source apps are asked not to publish the interface details. CLAIM (forum post). Treat as a blocker for an open-source integration until confirmed with the vendor.
+4. **Wallpaper tools do not monitor or protect**: Wallpaper Engine users report battery drain and frame drops with heavy items (consumer-demand.md, D4) and the Workshop had to close its "Applications" section after a malware problem (single weak source). Live wallpapers, monitoring and security are three separate apps today. INFERENCE: one safe runtime for all three is the opening.
+5. **Text-config dashboards** (Rainmeter + sensor plugins, AIDA64 SensorPanel) are powerful but hard to set up (competitor-analysis.md).
+
+## What a user-mode approach can and cannot read (OBSERVED on this PC: i7-14700F, RTX 5060, one monitor)
+- Available without any driver of ours: CPU utilization (GetSystemTimes), RAM, GPU Engine and GPU memory counters (PDH), Network Interface and PhysicalDisk counters (PDH), NVIDIA GPU temperature/fan/power/clocks/VRAM through NVML (`nvml.dll`, found in System32, ships with the NVIDIA driver).
+- NOT available: CPU package temperature and fan RPM. `\Thermal Zone Information(*)\Temperature` failed with error 0x800007D1 and `MSAcpi_ThermalZoneTemperature` reported "Not supported". CPU temperature needs low-level access (MSR/SMBus) via a driver or a vendor tool. INFERENCE: no honest user-mode path to CPU temperature exists on this machine, so Plinth must say so and offer optional bridges instead of shipping its own driver.
+
+## The all-in-one product: three pillars on one safe runtime (decision D22)
+1. **Live motion wallpapers**: video, web/shader, and Scenes, rendered in the same sandboxed layer, with automatic pause in games/fullscreen/battery and a visible Impact Meter. Compete with Wallpaper Engine and Lively on safety and cost transparency.
+2. **System monitoring**: PC Vitals (CPU, GPU, VRAM, RAM, network, disk, GPU temperature/power/fan where available), build spec card, case-screen output. Compete with Rainmeter + HWiNFO on setup effort and safety.
+3. **Security**: (a) the widget/wallpaper sandbox, permissions and proxy already built; (b) a **Security Center** that gives visibility the PC owner rarely has: Windows security status (Defender/firewall via Windows Security Center, user-mode), which processes have open network connections and to where (TCP/UDP tables, user-mode), startup items, and a log of everything Plinth's own content tried to do. It is visibility, not an antivirus: it must not claim to detect malware. Feasibility on this PC: NOT TESTED yet.
+
+## Decisions this research drives (design/decisions.md D16-D22)
+Beachhead audience PC builders; no kernel driver of our own; RGB via OpenRGB's SDK server as an optional later client (OpenRGB is GPL-2.0-or-later; a separate process over its network protocol keeps our crates Apache-2.0; protocol details UNVERIFIED); output targets (monitors, case screens) first-class; trusted first-party widgets share one process; skills policy; three-pillar scope.
+
+## Skills and plugins found online
+- `anthropics/skills` (about 185k stars per the page; many example skills Apache-2.0, document skills source-available; the page says skills are for demonstration and to review scripts before use) and `anthropics/claude-plugins-official` (internal and external plugins; the README warns to trust a plugin before installing; each plugin has its own license). Community lists exist (awesome-claude-skills collections).
+- Candidate fits seen through aggregators: a Playwright-based UI testing skill (MIT, about 2.9k stars per one aggregator), a Trail of Bits static-analysis pack (CodeQL/Semgrep), a community Rust-for-Tauri security skill. All are third-party instructions that can run code. **None were installed.** Built-in `/security-review` is available and is used as a release gate.
