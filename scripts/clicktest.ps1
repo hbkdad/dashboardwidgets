@@ -66,10 +66,19 @@ try {
   Invoke-ByName $w "Revert" | Out-Null
   Check "Revert persisted applied=false" (Wait-Until { (St).applied -eq $false })
   Check "app reported revert" (Wait-Until { Select-String -Path $log -Pattern "hub: revert" -Quiet })
+} catch {
+  "SCRIPT ERROR: $($_.Exception.Message)"
+  $results += [pscustomobject]@{ Name = "script aborted: $($_.Exception.Message)"; Ok = $false }
 } finally {
+  if (@($results | Where-Object { -not $_.Ok }).Count -gt 0) {
+    "--- diagnostics ---"
+    $h = Get-PlinthWindow; "hub window now: exists=$([bool]$h) offscreen=$(if ($h) { $h.Current.IsOffscreen } else { '-' })"
+    "running plinth-app processes: $(@(Get-Process plinth-app -ErrorAction SilentlyContinue).Count)"
+    "--- app log tail ---"; Get-Content $log -Tail 14
+    if (Test-Path $log2) { "--- second launch log ---"; Get-Content $log2 -Tail 5 }
+  }
   if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force }
 }
 $bad = @($results | Where-Object { -not $_.Ok }).Count
-if ($bad -gt 0) { "--- diagnostics (app log tail) ---"; Get-Content $log -Tail 12; if (Test-Path $log2) { "--- second launch log ---"; Get-Content $log2 -Tail 5 } }
 "{0} of {1} click checks passed" -f ($results.Count - $bad), $results.Count
 if ($bad -gt 0) { exit 1 }

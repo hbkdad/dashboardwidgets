@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-30
+Monitoring pillar and the all-in-one direction (decisions D16-D22).
+### Added
+- `plinth-app/src/hw.rs`: one-thread user-mode sampler (CPU via GetSystemTimes, RAM, NVIDIA GPU via NVML loaded only from System32, network/disk/CPU clock via PDH, parts list from the registry); no kernel driver (D17).
+- Widgets PC Vitals and Build Card; `system.info` permission; first-party widgets share one trusted origin (`pwt.localhost`), third-party widgets keep isolated origins (D21). `Host::install_trusted`, `bridge_widget`.
+- Pause governor wired to the OS (fullscreen app, battery, remote session) with an end-to-end test; live motion wallpaper is opt-in; the hub's web view is released while hidden; hub revival watcher; state loader tolerates a UTF-8 BOM.
+- Impact Meter now uses measured numbers (`scripts/measure-app.ps1`): about 270-300 MB with the hub closed, +200 MB while it is open; about 2% of one core while the desktop is visible (about 9% with live motion), near 0 when covered.
+- `research/pc-builders.md`, `scripts/{measure-app,relaunch-test}.ps1`, `scripts/hub-xss-check.js`; 53 unit tests, app autotest 15 checks, click test 28 checks.
+### Security
+- Security review found stored XSS in the hub: widget-controlled text (diag.log notes, manifest fields, proxy targets) was rendered with `innerHTML`, so a hostile widget could run script in the trusted hub (which owns the grant/safe-mode IPC). Fixed with output escaping plus a hub CSP; verified before (script ran) and after (0 injected elements). Only first-party widgets ship today, so this was latent, not exploited.
+### Known limits
+- Intermittent (about 3 in roughly 30 runs) click-test failure on re-showing the hub after a second launch; not root-caused, diagnostics added.
+- CPU temperature and fan speed are not readable in user mode on the tested PC; trusted status is currently decided by widget id prefix `com.plinth.` and the bundled widgets folder, which must become signature- or location-based before downloaded packages exist.
+
 ## [0.6.0] - 2026-10-30
 Real-window click testing, background mode and single instance.
 ### Added
