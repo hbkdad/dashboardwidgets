@@ -14,6 +14,8 @@ Mirrors `../design/business-and-roadmap.md` §5. Targets are planning assumption
 - [x] Spike D: `plinth-proxy` deny-by-default proxy built; 4/4 end-to-end runs with 0 direct connections (see `apps/host-demo/RESULTS.md`). Still to do: HTTPS allow-path test, per-widget attribution, `wss`, WebView2 service traffic allow-list, production wiring (start proxy with the host, update allow-list on grant change)
 - [ ] Name clearance and public brand (decision D2)
 
+- [x] First runnable app (`apps/plinth-app`, v0.5.0): hub, desktop layer, widgets, broker, proxy, persistence; autotest 10/10
+
 ## Alpha (MVP, about 4–6 months after Phase 0)
 Window-layer manager, widget host with permission bridge, Permission Center UI (grants, activity log, revoke, Safe mode), 10 first-party widgets, Scenes (local), remix editor, minimal pause governor, theme tokens, revert/profile export, accessibility baseline, signed installer. Gate: Windows test matrix passes; benchmark suite in CI.
 

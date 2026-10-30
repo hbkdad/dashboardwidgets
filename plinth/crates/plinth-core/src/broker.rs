@@ -145,6 +145,10 @@ impl Broker {
         });
     }
 
+    pub fn is_granted(&self, widget: &str, perm: PermissionId) -> bool {
+        self.granted.get(widget).map_or(false, |g| g.contains(&perm))
+    }
+
     pub fn is_registered(&self, widget: &str) -> bool {
         self.declared.contains_key(widget)
     }

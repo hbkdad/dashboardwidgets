@@ -1,0 +1,2 @@
+{ "format": 1, "id": "com.plinth.notes", "name": "Notes", "version": "1.0.0", "type": "widget",
+  "permissions": [ { "id": "storage", "reason": "Saves your note on this PC (up to 64 KB)" } ] }

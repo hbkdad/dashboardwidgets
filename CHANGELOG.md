@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-30
+First runnable app.
+### Added
+- `apps/plinth-app`: hub window (Scenes, Safety, Network), desktop layer behind the icons, 3 first-party widgets (`plinth/widgets/clock|sysmon|notes`) with live CPU/RAM, permission broker, forced deny-by-default proxy, persistent state, restore-on-start. Unattended autotest: 10 of 10 checks in 3 of 3 runs.
+- `Host::describe()`, `Host::storage_snapshot()/restore_storage()`, `Broker::is_granted()`.
+- Working method files: `CLAUDE.md`, `feature_list.json`, `claude-progress.md`, `scripts/verify.ps1` (decision D15).
+### Decisions recorded
+- D13 wry+tao shell, plain HTML/JS hub; D14 built-ins granted at first run; D15 harness-style durable state.
+### Known limits
+- Primary monitor only, no tray/autostart, Safe mode pauses first-party too, hub window not click-tested by a human or automation, no installer. See `plinth/apps/plinth-app/README.md`.
+
 ## [0.4.0] - 2026-10-30
 Spike D: deny-by-default network proxy closes the bare-connection gap in end-to-end tests.
 ### Added

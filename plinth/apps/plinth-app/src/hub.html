@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plinth</title>
+<style>
+:root{--bg:#0b0c0f;--s1:#12141a;--s2:#1a1d26;--s3:#242836;--bd:rgba(255,255,255,.09);--bd2:rgba(255,255,255,.18);--tx:#eef0f6;--mut:#9aa1b5;--faint:#8a91ab;--sig:#7cf2c8;--ink:#04281d;--amb:#ffb454;--red:#ff6b6b;--info:#8ab4ff;--accent:var(--sig);--ease:cubic-bezier(.16,1,.3,1);--font:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;--disp:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,monospace}
+*{box-sizing:border-box;margin:0}html{font-size:16px}
+body{background:radial-gradient(1000px 600px at 80% -10%,#1b2340,transparent 60%),radial-gradient(800px 500px at -10% 110%,#10281f,transparent 55%),var(--bg);color:var(--tx);font:400 .9375rem/1.5 var(--font);min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer}:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+.app{display:grid;grid-template-columns:84px 1fr;min-height:100vh}
+.rail{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;align-items:center;gap:8px;padding:22px 0;border-right:1px solid var(--bd);background:rgba(14,16,22,.7);backdrop-filter:blur(18px)}
+.logo{width:40px;height:40px;border-radius:13px;background:conic-gradient(from 210deg,var(--sig),#5b8cff,#b48cff,var(--sig));display:grid;place-items:center;margin-bottom:14px}.logo i{width:15px;height:15px;border-radius:5px;background:var(--bg)}
+.nav button{width:62px;padding:10px 0 8px;border:0;background:none;border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--mut);font-size:.6875rem;transition:background .15s,color .15s}
+.nav button:hover{background:var(--s2);color:var(--tx)}.nav button[aria-current=page]{background:var(--s3);color:var(--tx);box-shadow:inset 0 0 0 1px var(--bd2)}
+.nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.nav [aria-current=page] svg{color:var(--accent)}
+.sp{flex:1}.safe{width:62px;border:1px solid var(--bd);border-radius:14px;background:var(--s1);padding:8px 0;font-size:.625rem;color:var(--mut);display:flex;flex-direction:column;align-items:center;gap:3px}
+.safe[aria-pressed=true]{background:rgba(255,180,84,.12);border-color:var(--amb);color:var(--amb)}
+main{padding:30px clamp(18px,3.5vw,52px) 60px;max-width:1280px}
+.view{display:none}.view.on{display:block;animation:in .5s var(--ease) both}@keyframes in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{font:600 1.1rem var(--disp)}
+.eb{font-size:.75rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);font-weight:600;margin-bottom:6px}.lede{color:var(--mut);max-width:62ch;margin-top:10px}
+.btn{border:1px solid var(--bd2);background:var(--s2);padding:10px 18px;border-radius:12px;font-weight:600;transition:transform .15s var(--ease),background .15s}.btn:hover{background:var(--s3);transform:translateY(-1px)}.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn.p{background:var(--accent);color:var(--ink);border-color:transparent;box-shadow:0 8px 26px -6px color-mix(in srgb,var(--accent) 60%,transparent)}.btn.g{background:none}
+.card{background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--bd);border-radius:22px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 8px 24px rgba(0,0,0,.35)}
+.chip{display:inline-flex;gap:6px;align-items:center;font-size:.75rem;padding:3px 10px;border-radius:999px;background:var(--s3);color:var(--mut);border:1px solid var(--bd)}
+.chip.ok{color:var(--sig);background:rgba(124,242,200,.08);border-color:rgba(124,242,200,.3)}.chip.warn{color:var(--amb);background:rgba(255,180,84,.08);border-color:rgba(255,180,84,.35)}.chip.bad{color:var(--red);background:rgba(255,107,107,.08);border-color:rgba(255,107,107,.35)}
+.row{display:flex;gap:12px;align-items:center}.between{justify-content:space-between}.mt{margin-top:22px}
+.stage{position:relative;aspect-ratio:16/9;border-radius:28px;overflow:hidden;border:1px solid var(--bd2);box-shadow:0 24px 64px rgba(0,0,0,.55);margin-top:22px;background:var(--wall)}
+.stage .mid{position:absolute;inset:0;background:var(--mid);mix-blend-mode:screen}
+.pw{position:absolute;border-radius:16px;padding:clamp(6px,1.2vw,16px);background:rgba(20,22,32,.42);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.15);color:#fff}
+.pw b{font:600 clamp(1rem,2.8vw,2.6rem)/1 var(--disp)}.pw small{display:block;opacity:.7;font-size:clamp(.5rem,.9vw,.8rem);margin-top:4px}
+.scenes{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-top:22px}
+.scene{text-align:left;border:1px solid var(--bd);border-radius:16px;background:var(--s1);overflow:hidden;padding:0;transition:transform .3s var(--ease),border-color .15s}.scene:hover{transform:translateY(-4px)}
+.scene[aria-checked=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.scene .th{aspect-ratio:16/9;background:var(--wall)}.scene .mt2{padding:10px 14px 14px}
+.bar{position:sticky;bottom:16px;margin-top:22px;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:18px;background:rgba(18,20,26,.88);backdrop-filter:blur(16px);border:1px solid var(--bd2)}
+.grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px;margin-top:22px}@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+.wi{border:1px solid var(--bd);border-radius:16px;background:var(--s1);margin:12px}.wi>button{width:100%;text-align:left;background:none;border:0;padding:14px 16px;display:flex;align-items:center;gap:12px}
+.av{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:700;background:var(--s3)}.pm{display:none;padding:0 16px 10px;border-top:1px solid var(--bd)}.wi.open .pm{display:block}
+.pr{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px dashed var(--bd)}.pr:last-child{border:0}.pr .w{flex:1}.pr b{display:block}.pr span{color:var(--mut);font-size:.8125rem}
+.sw{width:46px;height:28px;border-radius:14px;border:1px solid var(--bd2);background:var(--s3);position:relative;padding:0;transition:background .15s}.sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .3s var(--ease)}
+.sw[aria-checked=true]{background:var(--accent);border-color:transparent}.sw[aria-checked=true]::after{transform:translateX(18px);background:var(--ink)}.sw:disabled{opacity:.4}
+.log{font:.75rem/1.55 var(--mono);padding:12px;max-height:340px;overflow:auto}.log div{display:grid;grid-template-columns:34px 1fr auto;gap:10px;padding:5px 8px;border-radius:8px}.log div:nth-child(odd){background:rgba(255,255,255,.025)}.ok{color:var(--sig)}.no{color:var(--red)}
+.meter{height:10px;border-radius:5px;background:var(--s3);overflow:hidden;margin-top:8px}.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--info));transition:width .6s var(--ease)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:var(--s3);border:1px solid var(--bd2);border-radius:16px;padding:12px 18px;transition:transform .3s var(--ease);z-index:9}.toast.on{transform:translate(-50%,0)}
+.modal{position:fixed;inset:0;background:rgba(5,6,9,.8);backdrop-filter:blur(10px);display:none;place-items:center;z-index:20;padding:20px}.modal.on{display:grid}.sheet{width:min(640px,100%);padding:32px}
+</style></head>
+<body>
+<div class="app">
+<nav class="rail" aria-label="Primary"><div class="logo" aria-hidden="true"><i></i></div>
+<div class="nav" id="nav">
+<button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
+<button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
+<button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
+<div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
+<main id="main" tabindex="-1">
+<section class="view on" id="v-scenes" aria-labelledby="h1"><div class="eb">Scenes</div><h1 id="h1">Your desktop, in one click.</h1>
+<p class="lede">A Scene is a wallpaper, widgets and a color mood. Nothing changes on your desktop until you press Apply, and Revert puts it back.</p>
+<div class="stage" id="stage" aria-label="Preview of the selected scene"><div class="mid"></div>
+<div class="pw" style="left:6%;top:10%"><b id="pt">09:41</b><small>Clock</small></div>
+<div class="pw" style="right:6%;top:10%;width:20%"><div style="font-weight:600">CPU · Memory</div><div class="meter"><i style="width:38%"></i></div><small>live on your desktop</small></div>
+<div class="pw" style="left:6%;bottom:12%;width:25%"><div style="font-weight:600">Notes</div><small>Type a note…</small></div></div>
+<div class="scenes" role="radiogroup" aria-label="Choose a scene" id="scenes"></div>
+<div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span></div><div class="row"><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
+
+<section class="view" id="v-safety" aria-labelledby="h2"><div class="eb">Safety · Permission Center</div><h1 id="h2">See everything. Revoke anything.</h1>
+<p class="lede">Widgets can only use what they declared and you allowed. Every request is logged, including the ones that were blocked.</p>
+<div class="grid"><div class="card" id="wl" style="padding:4px 0"></div>
+<div style="display:grid;gap:22px;align-content:start"><div class="card" style="padding:22px"><div class="row between"><h2>Widget slots</h2><span class="chip" id="slots">…</span></div><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">Each widget runs in its own isolated process (about 29 MB). Estimates, not live counters.</p><div class="meter"><i id="mb" style="width:0"></i></div></div>
+<div class="card"><div class="row between" style="padding:16px 16px 0"><h2>Activity</h2></div><div class="log" id="log" role="log" aria-live="polite" aria-label="Widget activity"></div></div></div></div></section>
+
+<section class="view" id="v-network" aria-labelledby="h3"><div class="eb">Network</div><h1 id="h3">Widgets never talk to the internet directly.</h1>
+<p class="lede">All widget traffic is forced through a Plinth proxy that blocks everything except hosts a widget declared and you allowed. A widget with no network permission can reach nothing at all.</p>
+<div class="grid"><div class="card" style="padding:22px"><h2>Allowed destinations</h2><div id="dest" class="mt" style="display:grid;gap:8px"></div></div>
+<div class="card"><div class="row between" style="padding:16px 16px 0"><h2>Proxy log</h2><span class="chip" id="pc">…</span></div><div class="log" id="plog" role="log" aria-live="polite" aria-label="Proxy log"></div></div></div></section>
+</main></div>
+
+<div class="modal" id="fr" role="dialog" aria-modal="true" aria-labelledby="ft"><div class="card sheet"><div class="eb">Welcome</div><h1 id="ft" style="font-size:2rem">Make it yours. Keep it safe.</h1>
+<p class="lede">Pick a Scene, press Apply, and your desktop gets a wallpaper and widgets that can only do what you allow. Press Revert any time.</p>
+<div style="display:grid;gap:10px;margin:22px 0"><div class="row"><span class="chip ok">Allowed</span><span>Built-in clock, system monitor and notes (read-only numbers, nothing leaves your PC)</span></div><div class="row"><span class="chip warn">Asks</span><span>Anything that wants the internet shows up in Safety first</span></div><div class="row"><span class="chip bad">Never</span><span>Your files, programs and keystrokes: no widget can ask for them</span></div></div>
+<div class="row between"><span></span><button class="btn p" id="frok">Got it</button></div></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+const send=(cmd,a={})=>window.ipc.postMessage(JSON.stringify({cmd,...a}));
+let S=null,open=new Set();
+const SC={dusk:{name:'Dusk',d:'Warm, calm, low glare',w:'linear-gradient(160deg,#2b1b4d 0%,#5b2a6b 40%,#d9667a 85%,#ffb27a 100%)',m:'radial-gradient(60% 50% at 70% 30%,rgba(255,170,120,.35),transparent 70%)',a:'#ffb27a',i:'#2a1400'},graphite:{name:'Graphite',d:'Matte, focused, no noise',w:'linear-gradient(160deg,#0d0f14 0%,#1a1e2b 55%,#2c3347 100%)',m:'radial-gradient(50% 60% at 25% 70%,rgba(124,242,200,.22),transparent 70%)',a:'#7cf2c8',i:'#04281d'},paper:{name:'Paper',d:'Light, airy, high legibility',w:'linear-gradient(160deg,#e9e4da 0%,#cfd8dc 60%,#b7c4d6 100%)',m:'radial-gradient(55% 55% at 75% 25%,rgba(255,255,255,.7),transparent 70%)',a:'#3b6cff',i:'#ffffff'}};
+function toast(t){$('#toast').textContent=t;$('#toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').classList.remove('on'),4500)}
+function show(v){$$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));$$('#nav button').forEach(b=>{b.dataset.v===v?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')})}
+$$('#nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+$('#safe').onclick=()=>send('safe',{on:!S.safe});
+$('#apply').onclick=()=>{send('apply');toast('Applying…')};$('#rev').onclick=()=>send('revert');
+$('#frok').onclick=()=>{$('#fr').classList.remove('on');send('firstrun_done')};
+function render(){
+  const sc=SC[S.scene],r=document.documentElement.style;r.setProperty('--wall',sc.w);r.setProperty('--mid',sc.m);r.setProperty('--accent',sc.a);r.setProperty('--ink',sc.i);
+  $('#stage').style.setProperty('--wall',sc.w);$('#stage').style.setProperty('--mid',sc.m);
+  const list=$('#scenes');list.innerHTML='';Object.entries(SC).forEach(([id,s])=>{const b=document.createElement('button');b.className='scene';b.setAttribute('role','radio');b.setAttribute('aria-checked',id===S.scene);b.innerHTML=`<div class="th" style="--wall:${s.w}"></div><div class="mt2"><b>${s.name}</b><br><span style="color:var(--mut);font-size:.8125rem">${s.d}</span></div>`;b.onclick=()=>send('scene',{id});list.append(b)});
+  $('#sn').textContent=sc.name;$('#cost').textContent=`≈${S.impact.ram} MB · ${S.impact.cpu}% CPU (estimate)`;$('#ap').hidden=!S.applied;$('#rev').disabled=!S.applied;$('#apply').textContent=S.applied?'Apply this scene':'Apply to my desktop';
+  $('#safe').setAttribute('aria-pressed',S.safe);$('#safeS').textContent=S.safe?'On':'Off';
+  const wl=$('#wl');wl.innerHTML='';S.widgets.forEach(w=>{const n=w.perms.filter(p=>p.on).length,el=document.createElement('div');el.className='wi'+(open.has(w.id)?' open':'');
+    el.innerHTML=`<button aria-expanded="${open.has(w.id)}"><div class="av">${w.name[0]}</div><div style="flex:1"><b>${w.name}</b><div style="color:var(--mut);font-size:.8125rem">${w.first?'Plinth':'Third party'} · v${w.version}</div></div><span class="chip ${S.safe?'warn':'ok'}">${S.safe?'Paused':'Isolated'}</span><span class="chip">${n}/${w.perms.length} allowed</span></button><div class="pm">${w.perms.length?'':'<div class="pr"><div class="w"><b>No permissions</b><span>This widget cannot read anything or reach the internet.</span></div></div>'}</div>`;
+    const pm=$('.pm',el);w.perms.forEach(p=>{const row=document.createElement('div');row.className='pr';row.innerHTML=`<div class="w"><b>${p.label}</b><span>${p.reason}${p.hosts.length?' ('+p.hosts.join(', ')+')':''}</span></div>`;const sw=document.createElement('button');sw.className='sw';sw.setAttribute('role','switch');sw.setAttribute('aria-checked',p.on);sw.setAttribute('aria-label',p.label+' for '+w.name);sw.onclick=()=>send('grant',{id:w.id,perm:p.k,on:!p.on});row.append(sw);pm.append(row)});
+    $('button',el).onclick=()=>{open.has(w.id)?open.delete(w.id):open.add(w.id);render()};wl.append(el)});
+  $('#slots').textContent=`${S.widgets.length} of 8 used`;$('#mb').style.width=(S.widgets.length*29/232*100)+'%';
+  const lg=$('#log');lg.innerHTML=S.activity.map(a=>`<div><small>#${a.seq}</small><span><b>${a.widget}</b> ${a.action}</span><span class="${a.allowed?'ok':'no'}">${a.allowed?'allowed':'blocked'}</span></div>`).join('')||'<div><span></span><span>No activity yet. Apply a Scene to start the widgets.</span><span></span></div>';
+  $('#dest').innerHTML=S.destinations.length?S.destinations.map(d=>`<div class="row"><span class="chip ok">Allowed</span><span>${d}</span></div>`).join(''):'<div class="row"><span class="chip">None</span><span>No widget has permission to use the internet.</span></div>';
+  $('#pc').textContent=`${S.proxy.length} attempts`;$('#plog').innerHTML=S.proxy.map(e=>`<div><small>#${e.seq}</small><span>${e.method} ${e.target}</span><span class="${e.verdict==='Allow'?'ok':'no'}">${e.verdict==='Allow'?'allowed':'blocked'}</span></div>`).join('')||'<div><span></span><span>Nothing has tried to leave your PC.</span><span></span></div>';
+  if(S.firstRun)$('#fr').classList.add('on');
+}
+window.__onState=(s)=>{const prev=S;S=s;render();if(prev&&s.msg)toast(s.msg)};
+setInterval(()=>{const d=new Date();$('#pt').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},5000);
+setInterval(()=>send('state'),4000);
+send('state');
+</script></body></html>
