@@ -25,6 +25,11 @@ impl Host {
             return reply(&Value::Null, Err("unknown_slot".into()));
         };
         let wid = pkg.manifest.id.clone();
+        self.bridge_as(&wid, msg)
+    }
+
+    pub(crate) fn bridge_as(&mut self, wid: &str, msg: &str) -> String {
+        let wid = wid.to_string();
         let v: Value = match serde_json::from_str(msg) {
             Ok(v) => v,
             Err(_) => return reply(&Value::Null, Err("bad_json".into())),
@@ -255,5 +260,73 @@ mod tests {
         assert_eq!(net.hosts, vec!["api.weather.example"]);
         h.revoke("com.example.w", PermissionId::SystemCpu);
         assert!(!h.describe()[0].permissions.iter().find(|p| p.id == PermissionId::SystemCpu).unwrap().granted);
+    }
+
+    #[test]
+    fn trusted_widgets_share_one_origin_with_per_widget_csp_and_identity() {
+        let mut h = host();
+        h.install_trusted(pkg("com.plinth.a", ALL)).unwrap();
+        h.install_trusted(pkg("com.plinth.b", r#"[{"id":"system.cpu","reason":"c"}]"#)).unwrap();
+        let third = h.install(pkg("com.vendor.c", r#"[{"id":"system.cpu","reason":"c"}]"#)).unwrap();
+        assert_eq!(third, 0, "third-party slots are independent of the trusted origin");
+        // served from the shared origin by widget id, each with its own CSP
+        let ra = h.serve("pwt.localhost", "/com.plinth.a/index.html");
+        assert_eq!(ra.status, 200);
+        assert_eq!(ra.body, b"<html>ok</html>");
+        assert!(ra.header("content-security-policy").unwrap().contains("connect-src 'none'"));
+        h.grant("com.plinth.a", PermissionId::NetFetch).unwrap();
+        assert!(h.serve("pwt.localhost", "/com.plinth.a/app.js").header("content-security-policy").unwrap().contains("https://api.weather.example"));
+        assert!(h.serve("pwt.localhost", "/com.plinth.b/app.js").header("content-security-policy").unwrap().contains("connect-src 'none'"), "b has no net grant");
+        // not servable: manifest, other ids, traversal, third-party widget through the trusted origin, no widget id
+        for bad in ["/com.plinth.a/manifest.json", "/com.nobody/index.html", "/com.plinth.a/../com.plinth.b/index.html", "/com.vendor.c/index.html", "/index.html", "/"] {
+            assert_eq!(h.serve("pwt.localhost", bad).status, 404, "{bad}");
+        }
+        assert_eq!(h.serve("pwt.localhost", SDK_PATH).status, 200);
+        // identity: the host names the widget; permissions are per widget
+        h.grant("com.plinth.a", PermissionId::SystemCpu).unwrap();
+        let ok: Value = serde_json::from_str(&h.bridge_widget("com.plinth.a", &json!({"id":1,"method":"data.get","params":{"key":"system.cpu"}}).to_string())).unwrap();
+        assert_eq!(ok["ok"]["percent"], 12.5);
+        let denied: Value = serde_json::from_str(&h.bridge_widget("com.plinth.b", &json!({"id":2,"method":"data.get","params":{"key":"system.cpu"}}).to_string())).unwrap();
+        assert_eq!(denied["error"], "denied:NotGranted", "b was never granted CPU");
+        let unknown: Value = serde_json::from_str(&h.bridge_widget("com.nobody", "{}")).unwrap();
+        assert_eq!(unknown["error"], "unknown_widget");
+        // third-party widgets are reachable through bridge_widget too
+        let tp: Value = serde_json::from_str(&h.bridge_widget("com.vendor.c", &json!({"id":3,"method":"data.get","params":{"key":"system.cpu"}}).to_string())).unwrap();
+        assert_eq!(tp["error"], "denied:NotGranted");
+        // describe, destinations, safe mode, uninstall
+        let d = h.describe();
+        assert_eq!(d.iter().filter(|w| w.trusted).count(), 2);
+        assert_eq!(d.iter().filter(|w| !w.trusted).count(), 1);
+        assert_eq!(h.allowed_destinations(), vec![("api.weather.example".to_string(), 443)]);
+        h.set_safe_mode(true);
+        assert_eq!(h.serve("pwt.localhost", "/com.plinth.a/index.html").status, 403);
+        assert!(h.allowed_destinations().is_empty());
+        h.set_safe_mode(false);
+        h.uninstall("com.plinth.a");
+        assert_eq!(h.serve("pwt.localhost", "/com.plinth.a/index.html").status, 404);
+        assert_eq!(h.trusted_ids(), vec!["com.plinth.b".to_string()]);
+    }
+
+    #[test]
+    fn trusted_install_rejects_id_collision_with_third_party_and_caps_count() {
+        let mut h = host();
+        h.install(pkg("com.vendor.x", "[]")).unwrap();
+        assert!(h.install_trusted(pkg("com.vendor.x", "[]")).is_err(), "a third-party id cannot be promoted to trusted");
+        for i in 0..crate::host::MAX_TRUSTED {
+            h.install_trusted(pkg(&format!("com.plinth.w{i}"), "[]")).unwrap();
+        }
+        assert_eq!(h.install_trusted(pkg("com.plinth.extra", "[]")), Err(HostError::SlotsFull));
+        h.install_trusted(pkg("com.plinth.w0", "[]")).unwrap(); // update in place still works at the cap
+    }
+
+    #[test]
+    fn system_info_is_a_known_data_key_and_needs_a_grant() {
+        let mut h = host();
+        h.install_trusted(pkg("com.plinth.a", r#"[{"id":"system.info","reason":"parts list"}]"#)).unwrap();
+        let r: Value = serde_json::from_str(&h.bridge_widget("com.plinth.a", &json!({"id":1,"method":"data.get","params":{"key":"system.info"}}).to_string())).unwrap();
+        assert_eq!(r["error"], "denied:NotGranted");
+        h.grant("com.plinth.a", PermissionId::SystemInfo).unwrap();
+        let r: Value = serde_json::from_str(&h.bridge_widget("com.plinth.a", &json!({"id":1,"method":"data.get","params":{"key":"system.info"}}).to_string())).unwrap();
+        assert_eq!(r["error"], "unavailable", "mock provider has no system.info; the permission itself was accepted");
     }
 }

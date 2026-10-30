@@ -11,6 +11,6 @@ pub mod setup;
 pub use broker::{ActivityEntry, Broker, Decision, DenyReason};
 pub use context::{Condition, Context, Engine, Learner, Rule, Suggestion};
 pub use governor::{should_pause, Policy, SystemState};
-pub use impact::{rate, Impact, Rating};
+pub use impact::{rate, scene_cost_with_motion, Impact, Rating};
 pub use manifest::{DeclaredPermission, Kind, Manifest, ManifestError, PermissionId};
 pub use setup::{PixelRect, Placement, SetupCard, SetupError};

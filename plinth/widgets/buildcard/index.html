@@ -1,0 +1,13 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:transparent;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:#fff;overflow:hidden}
+html[data-ink=dark] body{color:#10131c}
+.w{height:100%;box-sizing:border-box;padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+h1{margin:0;font:600 13px "Segoe UI Variable Display","Segoe UI",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--accent,#7cf2c8)}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:14px}
+dt{opacity:.6}dd{margin:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint{font-size:12px;opacity:.65}
+</style></head><body><div class="w"><h1>My build</h1>
+<dl><dt>CPU</dt><dd id="c">--</dd><dt>GPU</dt><dd id="g">--</dd><dt>Memory</dt><dd id="r">--</dd><dt>System</dt><dd id="o">--</dd></dl>
+<div class="hint" id="h"></div></div>
+<script src="/__plinth/sdk.js"></script><script src="main.js"></script></body></html>

@@ -16,6 +16,12 @@ Mirrors `../design/business-and-roadmap.md` §5. Targets are planning assumption
 
 - [x] First runnable app (`apps/plinth-app`, v0.5.0): hub, desktop layer, widgets, broker, proxy, persistence; autotest 10/10
 
+## Release plan toward the all-in-one app (decision D22)
+- v0.7.0 Monitoring pillar: user-mode hardware sampler (CPU, RAM, GPU via NVML, network, disk), PC Vitals and Build Card widgets, shared first-party origin (cheaper), security-review gate.
+- v0.8.0 Wallpaper pillar: live video/web wallpapers in the layer with pause rules, per-monitor targeting, Impact Meter fed by the sampler.
+- v0.9.0 Security pillar: Security Center (Windows security status, per-process connections, startup items, blocked-attempt log), proxy gaps closed.
+- v0.10.0 Moods + Setup Cards import/export + Builds showcase; then name clearance, signed installer, store.
+
 ## Alpha (MVP, about 4–6 months after Phase 0)
 Window-layer manager, widget host with permission bridge, Permission Center UI (grants, activity log, revoke, Safe mode), 10 first-party widgets, Scenes (local), remix editor, minimal pause governor, theme tokens, revert/profile export, accessibility baseline, signed installer. Gate: Windows test matrix passes; benchmark suite in CI.
 

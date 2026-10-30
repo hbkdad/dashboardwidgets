@@ -1,0 +1,2 @@
+{ "format": 1, "id": "com.plinth.buildcard", "name": "Build Card", "version": "1.0.0", "type": "widget",
+  "permissions": [ { "id": "system.info", "reason": "Shows your PC's parts list (CPU, graphics card, memory, Windows version)" } ] }

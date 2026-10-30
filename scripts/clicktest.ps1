@@ -31,15 +31,15 @@ try {
   Invoke-ByName $w "Safety" | Out-Null
   Start-Sleep -Milliseconds 800
   $btnCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-  Wait-Until { $script:sys = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) | Where-Object { $_.Current.Name -like "*System monitor*" } | Select-Object -First 1; [bool]$script:sys } 6 | Out-Null
-  Check "Safety lists the System monitor widget" ([bool]$sys)
+  Wait-Until { $script:sys = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) | Where-Object { $_.Current.Name -like "*PC Vitals*" } | Select-Object -First 1; [bool]$script:sys } 6 | Out-Null
+  Check "Safety lists the PC Vitals widget" ([bool]$sys)
   Check "text uses correct Unicode (the middle dot in the widget row renders as U+00B7, no mojibake)" ($sys.Current.Name.Contains([string][char]0x00B7))
   if ($sys) { try { $sys.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand() } catch { try { $sys.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch {} }; Start-Sleep -Milliseconds 800 }
-  $before = @((St).grants.'com.plinth.sysmon').Count
-  Check "sysmon starts with CPU and memory granted" ($before -eq 2)
-  Check "the CPU permission switch is reachable after expanding" (Wait-Until { [bool](Find-ByName $w "CPU load for System monitor") } 6)
-  Invoke-ByName $w "CPU load for System monitor" | Out-Null
-  Check "revoking CPU in the UI persisted (sysmon now has only memory)" (Wait-Until { @((St).grants.'com.plinth.sysmon').Count -eq 1 -and (St).grants.'com.plinth.sysmon' -contains "system.ram" })
+  $before = @((St).grants.'com.plinth.pcvitals').Count
+  Check "PC Vitals starts with its five readings granted" ($before -eq 5)
+  Check "the CPU permission switch is reachable after expanding" (Wait-Until { [bool](Find-ByName $w "CPU load for PC Vitals") } 6)
+  Invoke-ByName $w "CPU load for PC Vitals" | Out-Null
+  Check "revoking CPU in the UI persisted (PC Vitals keeps its other four readings)" (Wait-Until { @((St).grants.'com.plinth.pcvitals').Count -eq 4 -and (St).grants.'com.plinth.pcvitals' -contains "system.ram" })
   Invoke-ByName $w "Safe mode Off" | Out-Null
   Check "Safe mode on persisted" (Wait-Until { (St).safe -eq $true })
   Check "safe mode button now reads On" (Wait-Until { [bool](Find-ByName $w "Safe mode On") } 6)
@@ -70,5 +70,6 @@ try {
   if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force }
 }
 $bad = @($results | Where-Object { -not $_.Ok }).Count
+if ($bad -gt 0) { "--- diagnostics (app log tail) ---"; Get-Content $log -Tail 12; if (Test-Path $log2) { "--- second launch log ---"; Get-Content $log2 -Tail 5 } }
 "{0} of {1} click checks passed" -f ($results.Count - $bad), $results.Count
 if ($bad -gt 0) { exit 1 }

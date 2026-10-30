@@ -6,6 +6,9 @@ use std::collections::HashMap;
 /// Soft cap on concurrent third-party widgets: each gets its own origin and WebView2 process
 /// (about +29 MB each in Spike C). Revisit after measuring on low-end hardware.
 pub const THIRD_PARTY_SLOTS: usize = 8;
+/// Origin shared by all trusted (first-party) widgets: one process instead of one per widget. Paths are /<widget id>/...
+pub const TRUSTED_SCHEME: &str = "pwt";
+pub const MAX_TRUSTED: usize = 16;
 pub const SDK_PATH: &str = "/__plinth/sdk.js";
 const SDK_JS: &str = include_str!("sdk.js");
 
@@ -28,6 +31,7 @@ pub struct PermissionInfo {
 #[derive(Debug, Clone)]
 pub struct WidgetInfo {
     pub slot: usize,
+    pub trusted: bool,
     pub id: String,
     pub name: String,
     pub version: String,
@@ -65,6 +69,7 @@ impl DataProvider for MockProvider {
 pub struct Host {
     pub(crate) broker: Broker,
     pub(crate) slots: Vec<Option<Package>>,
+    pub(crate) trusted: Vec<Package>,
     pub(crate) provider: Box<dyn DataProvider>,
     pub(crate) storage: HashMap<String, HashMap<String, String>>,
     safe: bool,
@@ -88,7 +93,7 @@ fn content_type(path: &str) -> &'static str {
 
 impl Host {
     pub fn new(provider: Box<dyn DataProvider>) -> Self {
-        Host { broker: Broker::new(2000), slots: (0..THIRD_PARTY_SLOTS).map(|_| None).collect(), provider, storage: HashMap::new(), safe: false }
+        Host { broker: Broker::new(2000), slots: (0..THIRD_PARTY_SLOTS).map(|_| None).collect(), trusted: Vec::new(), provider, storage: HashMap::new(), safe: false }
     }
 
     pub fn scheme_for_slot(slot: usize) -> String {
@@ -115,6 +120,7 @@ impl Host {
                 *s = None;
             }
         }
+        self.trusted.retain(|p| p.manifest.id != id);
         self.broker.unregister(id);
         self.storage.remove(id);
     }
@@ -147,6 +153,7 @@ impl Host {
             .slots
             .iter()
             .flatten()
+            .chain(self.trusted.iter())
             .flat_map(|p| self.broker.granted_fetch_hosts(&p.manifest.id))
             .map(|h| (h, 443u16))
             .collect();
@@ -157,25 +164,49 @@ impl Host {
 
     /// Everything a UI needs to render the Permission Center: installed widgets with declared permissions and grant state.
     pub fn describe(&self) -> Vec<WidgetInfo> {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(slot, p)| {
-                let p = p.as_ref()?;
-                let m = &p.manifest;
-                Some(WidgetInfo {
-                    slot,
-                    id: m.id.clone(),
-                    name: m.name.clone(),
-                    version: m.version.clone(),
-                    permissions: m
-                        .permissions
-                        .iter()
-                        .map(|d| PermissionInfo { id: d.id, reason: d.reason.clone(), hosts: d.hosts.clone(), granted: self.broker.is_granted(&m.id, d.id) })
-                        .collect(),
-                })
-            })
-            .collect()
+        let info = |slot: usize, trusted: bool, p: &Package| {
+            let m = &p.manifest;
+            WidgetInfo {
+                slot,
+                trusted,
+                id: m.id.clone(),
+                name: m.name.clone(),
+                version: m.version.clone(),
+                permissions: m
+                    .permissions
+                    .iter()
+                    .map(|d| PermissionInfo { id: d.id, reason: d.reason.clone(), hosts: d.hosts.clone(), granted: self.broker.is_granted(&m.id, d.id) })
+                    .collect(),
+            }
+        };
+        let mut v: Vec<WidgetInfo> = self.trusted.iter().map(|p| info(0, true, p)).collect();
+        v.extend(self.slots.iter().enumerate().filter_map(|(slot, p)| p.as_ref().map(|p| info(slot, false, p))));
+        v
+    }
+
+    /// Installs (or updates) a trusted first-party widget into the shared origin. The caller decides trust: only call
+    /// this for packages shipped with the app, never for downloaded content.
+    pub fn install_trusted(&mut self, pkg: Package) -> Result<(), HostError> {
+        let id = pkg.manifest.id.clone();
+        if self.slots.iter().flatten().any(|p| p.manifest.id == id) {
+            return Err(HostError::Denied("id already installed as third-party".into()));
+        }
+        match self.trusted.iter().position(|p| p.manifest.id == id) {
+            Some(i) => {
+                self.broker.register(&pkg.manifest);
+                self.trusted[i] = pkg;
+            }
+            None if self.trusted.len() >= MAX_TRUSTED => return Err(HostError::SlotsFull),
+            None => {
+                self.broker.register(&pkg.manifest);
+                self.trusted.push(pkg);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn trusted_ids(&self) -> Vec<String> {
+        self.trusted.iter().map(|p| p.manifest.id.clone()).collect()
     }
 
     /// Widget storage for persistence by the app (per widget id: key -> value).
@@ -235,6 +266,9 @@ impl Host {
     /// Handles a request to `http://pw<slot>.localhost<path>`.
     pub fn serve(&mut self, host: &str, path: &str) -> Response {
         let strict = "default-src 'none'";
+        if host.split(':').next() == Some(&format!("{TRUSTED_SCHEME}.localhost")) {
+            return self.serve_trusted(path);
+        }
         let Some(slot) = Self::slot_from_host(host) else {
             return self.respond(404, "text/plain", strict, b"not found".to_vec());
         };
@@ -261,4 +295,44 @@ impl Host {
         }
     }
 
+
+    fn serve_trusted(&mut self, path: &str) -> Response {
+        let strict = "default-src 'none'";
+        if path.split('?').next() == Some(SDK_PATH) {
+            return self.respond(200, "text/javascript; charset=utf-8", strict, SDK_JS.as_bytes().to_vec());
+        }
+        let p = path.split(['?', '#']).next().unwrap_or("").trim_start_matches('/');
+        let Some((id, rest)) = p.split_once('/') else {
+            return self.respond(404, "text/plain", strict, b"not found".to_vec());
+        };
+        let Some(pkg) = self.trusted.iter().find(|pk| pk.manifest.id == id) else {
+            return self.respond(404, "text/plain", strict, b"not found".to_vec());
+        };
+        let csp = self.csp_for(id);
+        if self.safe {
+            return self.respond(403, "text/html; charset=utf-8", &csp, b"<p>Safe mode: widgets are disabled.</p>".to_vec());
+        }
+        let Some(norm) = normalize_path(&format!("/{rest}")) else {
+            return self.respond(404, "text/plain", &csp, b"not found".to_vec());
+        };
+        match pkg.get(&norm) {
+            Some(bytes) => {
+                let body = bytes.to_vec();
+                self.respond(200, content_type(&norm), &csp, body)
+            }
+            None => self.respond(404, "text/plain", &csp, b"not found".to_vec()),
+        }
+    }
+
+    /// Like `bridge`, but the trusted layer page names the widget (it created and tracks every iframe). Works for trusted
+    /// and third-party widgets alike; the widget id never comes from the message.
+    pub fn bridge_widget(&mut self, id: &str, msg: &str) -> String {
+        if let Some(slot) = self.slot_of(id) {
+            return self.bridge(slot, msg);
+        }
+        if self.trusted.iter().any(|p| p.manifest.id == id) {
+            return self.bridge_as(id, msg);
+        }
+        serde_json::json!({ "id": null, "error": "unknown_widget" }).to_string()
+    }
 }
