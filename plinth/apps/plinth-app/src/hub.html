@@ -306,13 +306,20 @@ window.__onLibrary=(m)=>{const r=m.req;if(!r||r.id!==L.token)return;L.pend.delet
 function libReset(keepScroll){L.token++;L.pages.clear();L.pend.clear();if(!keepScroll)$('#lgrid').scrollTop=0;libAsk(0);paintLib()}
 window.__libChanged=()=>libReset(true);
 function geom(){const g=$('#lgrid'),W=g.clientWidth-L.gap;L.cols=Math.max(1,Math.floor((W+L.gap)/(190+L.gap)));L.cw=Math.floor((W-L.gap*(L.cols-1))/L.cols);L.rowH=Math.round(L.cw*9/16)+30+L.gap;return g}
+function cardHtml(it,i,st){return `<div class="lcard ${L.sel&&L.sel.key===it.key?'sel':''} ${it.ok?'':'bad'}" data-i="${i}" data-key="${esc(it.key)}" role="button" tabindex="0" aria-label="${esc(it.name)}, ${esc(it.w)} by ${esc(it.h)}${it.fav?', favorite':''}${it.ok?'':', '+esc(it.status)}" style="${st}">${it.ok?`<img alt="" decoding="async" src="http://pwth.localhost/${esc(it.key)}.jpg">`:'<div class="ph"></div>'}<button class="fav" aria-pressed="${it.fav}" aria-label="${it.fav?'Remove from favorites':'Add to favorites'}: ${esc(it.name)}">${it.fav?'★':'☆'}</button>${it.ok?'':`<span class="chip warn st">${esc(it.status)}</span>`}<div class="nm" title="${esc(it.path)}">${esc(it.name)}</div></div>`}
+// Only the cards in view exist, and a card that scrolls away gives its picture back (an <img> that is merely removed keeps its decoded
+// bitmap in the page cache; with 10,000 pictures that grew the hub by hundreds of MB while scrolling).
+function dropCard(e){e.querySelectorAll('img').forEach(i=>{i.removeAttribute('src');i.remove()});e.remove()}
 function paintLib(){cancelAnimationFrame(L.raf);L.raf=requestAnimationFrame(()=>{const g=geom(),rows=Math.ceil(L.total/L.cols);$('#lspacer').style.height=(rows*L.rowH+L.gap)+'px';
-  const r0=Math.max(0,Math.floor(g.scrollTop/L.rowH)-1),r1=Math.min(rows,Math.ceil((g.scrollTop+g.clientHeight)/L.rowH)+1);let html='';
+  const r0=Math.max(0,Math.floor(g.scrollTop/L.rowH)-1),r1=Math.min(rows,Math.ceil((g.scrollTop+g.clientHeight)/L.rowH)+1);
+  const want=new Map();
   for(let r=r0;r<r1;r++)for(let c=0;c<L.cols;c++){const i=r*L.cols+c;if(i>=L.total)break;const pg=Math.floor(i/PAGE)*PAGE,page=L.pages.get(pg);if(!page)libAsk(pg);const it=page&&page[i-pg];
     const st=`left:${L.gap+c*(L.cw+L.gap)}px;top:${L.gap+r*L.rowH}px;width:${L.cw}px;height:${L.rowH-L.gap}px`;
-    if(!it){html+=`<div class="lcard skel" style="${st}"><img alt=""><div class="nm">&nbsp;</div></div>`;continue}
-    html+=`<div class="lcard ${L.sel&&L.sel.key===it.key?'sel':''} ${it.ok?'':'bad'}" data-i="${i}" data-key="${esc(it.key)}" role="button" tabindex="0" aria-label="${esc(it.name)}, ${esc(it.w)} by ${esc(it.h)}${it.fav?', favorite':''}${it.ok?'':', '+esc(it.status)}" style="${st}">${it.ok?`<img alt="" decoding="async" loading="lazy" src="http://pwth.localhost/${esc(it.key)}.jpg">`:'<div class="ph"></div>'}<button class="fav" aria-pressed="${it.fav}" aria-label="${it.fav?'Remove from favorites':'Add to favorites'}: ${esc(it.name)}">${it.fav?'★':'☆'}</button>${it.ok?'':`<span class="chip warn st">${esc(it.status)}</span>`}<div class="nm" title="${esc(it.path)}">${esc(it.name)}</div></div>`}
-  g.querySelectorAll('.lcard').forEach(e=>e.remove());$('#lspacer').insertAdjacentHTML('afterend',html)})}
+    want.set(it?it.key+'|'+i+'|'+(L.sel&&L.sel.key===it.key)+'|'+it.fav+'|'+st:'skel|'+i+'|'+st,{it,i,st})}
+  const have=new Map();g.querySelectorAll('.lcard').forEach(e=>{const k=e.dataset.sig;if(k&&want.has(k)&&!have.has(k))have.set(k,e);else dropCard(e)});
+  const frag=document.createDocumentFragment();
+  want.forEach((v,k)=>{if(have.has(k))return;const t=document.createElement('div');t.innerHTML=v.it?cardHtml(v.it,v.i,v.st):`<div class="lcard skel" style="${v.st}"><img alt=""><div class="nm">&nbsp;</div></div>`;const el=t.firstElementChild;el.dataset.sig=k;frag.append(el)});
+  g.append(frag)})}
 $('#lgrid').addEventListener('scroll',paintLib);addEventListener('resize',paintLib);
 // The grid is laid out while its view is hidden; repaint whenever its size changes (including when the view is shown).
 if(window.ResizeObserver)new ResizeObserver(()=>{if($('#lgrid').clientWidth>0)paintLib()}).observe($('#lgrid'));

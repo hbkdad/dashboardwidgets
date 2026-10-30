@@ -130,8 +130,8 @@
       "id": "F20",
       "name": "Wallpaper library: bundled images, folder scanning and watching, thumbnails, dedupe, fit modes, slideshow, per-monitor wallpapers",
       "status": "partial",
-      "evidence": "library end-to-end test 10/10 on the real monitors (scan, dedupe, corrupt file, watcher, compose at exact resolution, OS wallpaper set per monitor, slideshow, exact Revert); 10,003-picture benchmark; click test 50/50",
-      "missing": "directory-change notifications (polling every 5 s), hub memory at 10,000 pictures not measured, thumbnails of animated wallpapers, GPU load, per-monitor slideshow timing under battery saver untested"
+      "evidence": "library end-to-end test 10/10 on the real monitors (scan, dedupe, corrupt file, watcher, compose at exact resolution, OS wallpaper set per monitor, slideshow, exact Revert); 10,003-picture benchmark; click test 50/50; hub memory at 10,014 pictures measured (+46 MB open, peak about 540 MB under continuous fast scrolling)",
+      "missing": "directory-change notifications (polling every 5 s), thumbnails of animated wallpapers, GPU load, per-monitor slideshow timing under battery saver untested"
     },
     {
       "id": "F21",
