@@ -123,6 +123,21 @@ impl Host {
         self.broker.set_safe_mode(on);
     }
 
+    /// Every (host, port) any installed widget may currently reach: the union of granted `net.fetch` hosts, port 443.
+    /// Feeds the network proxy allow-list. Per-widget attribution is the CSP's job; the proxy enforces the union.
+    pub fn allowed_destinations(&self) -> Vec<(String, u16)> {
+        let mut v: Vec<(String, u16)> = self
+            .slots
+            .iter()
+            .flatten()
+            .flat_map(|p| self.broker.granted_fetch_hosts(&p.manifest.id))
+            .map(|h| (h, 443u16))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+
     pub fn activity(&self, id: &str) -> Vec<&ActivityEntry> {
         self.broker.activity(id)
     }

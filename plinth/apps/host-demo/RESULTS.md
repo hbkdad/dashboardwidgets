@@ -22,3 +22,24 @@ With `PLINTH_PROXY=1` (all WebView2 traffic forced to a local listener, loopback
 
 ## Not tested
 Real telemetry provider (CPU is a mock value), multiple monitors, desktop-layer attach of the host (demo uses a normal window), memory/GPU exhaustion, safe-mode toggling at runtime, grant changes while widgets run (CSP changes need a reload), upgrade flow, more than 2 widgets.
+
+---
+
+# Spike D: real deny-by-default proxy (`plinth-proxy`), PLINTH_PROXY=1
+
+Date: 2026-10-30, same machine and build. `plinth-proxy` (std only): accepts only `CONNECT host:port`; allows a tunnel only if the destination is in the allow-list built from the broker's granted `net.fetch` hosts (port 443), the proxy is not in Safe mode, and the resolved address is not loopback/private/link-local (SSRF and DNS-rebinding guard); denies plain HTTP, other methods, malformed and oversized requests; caps concurrent connections; logs every attempt. WebView2 is started with `--proxy-server=http://127.0.0.1:<port> --proxy-bypass-list=<-loopback>`.
+
+## Unit and socket tests: 8 passed (OBSERVED)
+Strict target parsing (userinfo tricks, paths, IPv6 brackets, port 0, double dots, trailing dot), exact host/port matching with no implicit subdomains, safe mode, private-address classifier (including IPv4-mapped IPv6), denial of plain HTTP/POST/garbage/9 KB headers, a real loopback tunnel echo test through an allow-listed destination (and denial of a neighbouring port), refusal of an allow-listed name that resolves to loopback, grant changes applying to the next request. Plus `Host::allowed_destinations()` (union of granted hosts, empty in safe mode) with a test.
+
+## End to end with the hostile widget: 4 of 4 runs, exit code 0 (OBSERVED)
+- 11 of 11 widget checks pass (functionality unchanged by the proxy).
+- Direct connections to the destination server: **0 HTTP requests and 0 bare connections** (in direct mode the same attack produced 1 bare connection in 4 of 4 runs).
+- Proxy log (5 entries, all denied, 0 allowed): two `CONNECT nav-edge.smartscreen.microsoft.com:443` (the browser's own SmartScreen check, denied) and three empty speculative connections to the proxy itself. The attacker's address never appears at the proxy: the navigation is blocked in the browser by the host `frame-src`, after Chromium's preconnect goes to the proxy rather than to the attacker.
+
+## What is NOT proven
+- The allow path with real HTTPS from a widget (needs a TLS endpoint; only the proxy's loopback echo tunnel was tested).
+- Per-widget attribution: the proxy enforces the union of all widgets' granted hosts; widget A could reach widget B's host if the CSP did not stop it. CSP `connect-src` (generated per widget) is the per-widget layer; a failure of CSP would expose the union.
+- WebSocket (`wss`) through CONNECT should work the same way but was not tested.
+- Denying SmartScreen: widgets cannot navigate anyway and the host page is local, so no user-visible failure was seen; whether any WebView2 feature (certificate revocation, component updates) needs an allow-list is UNVERIFIED. Real DNS behavior with a remote attacker name was not observed (loopback only).
+- Proxy performance and failure mode (proxy down means no network for widgets, which is the safe failure).

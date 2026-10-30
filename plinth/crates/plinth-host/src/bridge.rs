@@ -225,4 +225,19 @@ mod tests {
         h.set_safe_mode(true);
         assert_eq!(call(&mut h, slot, "data.get", json!({ "key": "system.cpu" }))["error"], "denied:SafeMode");
     }
+
+    #[test]
+    fn allowed_destinations_is_the_union_of_granted_hosts() {
+        let mut h = host();
+        h.install(pkg("com.example.a", ALL)).unwrap();
+        h.install(pkg("com.example.b", r#"[{"id":"net.fetch","hosts":["api.weather.example","cdn.example"],"reason":"x"}]"#)).unwrap();
+        assert!(h.allowed_destinations().is_empty(), "nothing granted yet");
+        h.grant("com.example.a", PermissionId::NetFetch).unwrap();
+        h.grant("com.example.b", PermissionId::NetFetch).unwrap();
+        assert_eq!(h.allowed_destinations(), vec![("api.weather.example".to_string(), 443), ("cdn.example".to_string(), 443)]);
+        h.revoke("com.example.b", PermissionId::NetFetch);
+        assert_eq!(h.allowed_destinations(), vec![("api.weather.example".to_string(), 443)]);
+        h.set_safe_mode(true);
+        assert!(h.allowed_destinations().is_empty());
+    }
 }

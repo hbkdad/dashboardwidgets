@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 plinth-core = { path = "../../crates/plinth-core" }
 plinth-host = { path = "../../crates/plinth-host" }
+plinth-proxy = { path = "../../crates/plinth-proxy" }
 serde_json = "1"
 tao = "0.37.2"
 wry = "0.57.1"

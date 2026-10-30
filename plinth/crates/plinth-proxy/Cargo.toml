@@ -1,0 +1,8 @@
+[package]
+name = "plinth-proxy"
+description = "Deny-by-default local HTTPS CONNECT proxy for widget network access (std only)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
