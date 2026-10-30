@@ -67,13 +67,10 @@ impl Library {
 
     pub fn save(&self) {
         let v = json!({ "version": 1, "roots": self.roots.iter().filter(|r| !r.bundled).map(|r| json!({ "path": r.path, "excludes": r.excludes })).collect::<Vec<_>>(), "items": self.items });
-        let tmp = self.file.with_extension("json.tmp");
         if let Some(d) = self.file.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        if std::fs::write(&tmp, serde_json::to_vec(&v).unwrap_or_default()).is_ok() {
-            let _ = std::fs::rename(&tmp, &self.file);
-        }
+        crate::state::write_atomic(&self.file, &serde_json::to_vec(&v).unwrap_or_default());
     }
 
     pub fn snapshot(&self) -> (Vec<Root>, Vec<Item>) {

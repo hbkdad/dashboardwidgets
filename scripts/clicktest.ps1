@@ -14,6 +14,8 @@ $fix = Join-Path $env:TEMP "plinth-click-lib"; python "$PSScriptRoot\make-librar
 $libDir = Join-Path $env:TEMP "plinth-click-libdata"; Remove-Item $libDir -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory $libDir | Out-Null
 $env:PLINTH_LIBRARY = Join-Path $libDir "library.json"
 [System.IO.File]::WriteAllText($env:PLINTH_LIBRARY, (@{ version = 1; roots = @(@{ path = $fix; excludes = @() }); items = @() } | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+# A leftover process from an earlier run would hold the single-instance lock and make this run exit at once.
+Get-Process plinth-app -ErrorAction SilentlyContinue | Stop-Process -Force; $end = (Get-Date).AddSeconds(8); while ((Get-Process plinth-app -ErrorAction SilentlyContinue) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
 $p = Start-Process -FilePath $exe -RedirectStandardOutput $log -PassThru -WindowStyle Hidden
 $results = @()
 function Check($name, [bool]$ok) { $script:results += [pscustomobject]@{ Name = $name; Ok = $ok }; "{0} {1}" -f $(if ($ok) { "[PASS]" } else { "[FAIL]" }), $name; if (-not $ok) { $st = St; "   at {0}: state scene={1} applied={2} stateFileExists={3}" -f (Get-Date -Format HH:mm:ss.fff), $(if ($st) { $st.scene } else { "?" }), $(if ($st) { $st.applied } else { "?" }), (Test-Path $state) } }

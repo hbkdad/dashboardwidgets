@@ -645,9 +645,12 @@ fn main() {
     let instance = format!("Local\\PlinthApp-{}", std::env::var("PLINTH_STATE").unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>());
     if !win::first_instance(&instance) {
         println!("Plinth is already running; bringing its window to the front.");
-        let _ = win::activate_existing_hub();
+        let signalled = win::signal_show(&instance);
+        let found = win::activate_existing_hub(); // best effort as well; the signal is what the running app acts on
+        println!("second launch: show signal {}, window {}", if signalled { "sent" } else { "NOT sent" }, if found { "found" } else { "not found" });
         return;
     }
+    let show_handle = win::show_event(&instance);
     let autotest: Option<u64> = std::env::var("PLINTH_AUTOTEST").ok().and_then(|s| s.parse().ok());
 
     // ---- state, host, widgets ----
@@ -770,11 +773,24 @@ fn main() {
         // Hub revival: if the hub was hidden (its web view released) and something makes the window visible again, such as a
         // second launch, ask the event loop to rebuild it.
         let p = proxy.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(400));
+        std::thread::spawn(move || {
+            let mut last = (false, false);
+            loop {
+            if win::wait_show(show_handle, 400) {
+                println!("show signal received");
+                let _ = p.send_event(Ev::Menu("open".to_string()));
+                std::thread::sleep(Duration::from_millis(800));
+                continue;
+            }
+            let now = (HUB_HIDDEN.load(std::sync::atomic::Ordering::Relaxed), win::hub_visible());
+            if now != last {
+                println!("hub watcher: hidden flag {}, window visible {}", now.0, now.1);
+                last = now;
+            }
             if HUB_HIDDEN.load(std::sync::atomic::Ordering::Relaxed) && win::hub_visible() {
                 let _ = p.send_event(Ev::Menu("open".to_string()));
                 std::thread::sleep(Duration::from_millis(800));
+            }
             }
         });
     }
@@ -1594,6 +1610,7 @@ fn main() {
             }
             Event::UserEvent(Ev::Menu(name)) => match name.as_str() {
                 "open" => {
+                    println!("open requested (hub web view present: {}, window visible: {})", hub_view.is_some(), hub_window.is_visible());
                     if hub_view.is_none() {
                         hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx));
                     }

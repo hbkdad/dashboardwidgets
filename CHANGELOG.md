@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-30
+Reliability: the intermittent click-test failures are explained and fixed.
+### Fixed
+- A save could be lost: Plinth wrote the state file through a temp file and renamed it, and Windows refuses to rename over a file another program has open (a backup tool, an antivirus scan, a script); the failure was ignored. Saves now retry and fall back to a direct write (`state::write_atomic`, same for the library index; test included). Explains the occasional "choosing Dusk persisted" failure.
+- A second launch sometimes did not bring the hidden hub back: the second process showed the first process's window from outside, which raced with the app's own window bookkeeping (the log proved the window was found and shown, yet stayed hidden). The second launch now sets a named event and the running app shows its own window.
+- Click test: leftover app processes from a previous run could hold the single-instance lock and make the next run exit at once; the test now clears them first. Result: 20 click-test runs in a row passed 47 of 47 (before: about 1 failure in 6).
+
 ## [0.10.1] - 2026-10-30
 ### Added
 - Several copies of the same widget, each on any monitor with its own place: "Add a copy" / "Remove copy" in the Monitors view. Copies share the widget's permissions and grants (revoking once stops every copy) and each has its own storage (`plinth-host::Host::bridge_instance`, instance names `id#2` to `id#99`, validated). The fake-monitor lifecycle test now covers a copy (15 of 15 checks); host tests 25.

@@ -134,9 +134,48 @@ impl State {
             let _ = std::fs::create_dir_all(d);
         }
         let v = json!({ "version": 1, "scene": self.scene, "applied": self.applied, "safe": self.safe, "motion": self.motion, "wallpaper": self.wallpaper, "monitor_walls": self.monitor_walls, "placements": self.placements, "fallback": self.fallback, "lib_sel": self.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(), "slides": self.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>(), "scrim": self.scrim, "profiles": self.profiles, "os_snapshot": self.os_snapshot.as_ref().map(|o| json!({ "wallpapers": o.wallpapers.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(), "position": o.position, "color": o.color })), "grants": self.grants, "storage": self.storage });
-        let tmp = p.with_extension("json.tmp");
-        if std::fs::write(&tmp, serde_json::to_vec_pretty(&v).unwrap_or_default()).is_ok() {
-            let _ = std::fs::rename(&tmp, &p);
+        write_atomic(&p, &serde_json::to_vec_pretty(&v).unwrap_or_default());
+    }
+}
+
+/// Write a file so a reader never sees half of it: write a temp file, then rename over the target. On Windows the rename fails
+/// while another program (a backup tool, an antivirus scan, a script) has the target open, and an ignored failure would silently
+/// lose the save; so retry a few times, and as a last resort write the target directly.
+pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> bool {
+    let tmp = path.with_extension("tmp-write");
+    if std::fs::write(&tmp, bytes).is_err() {
+        return std::fs::write(path, bytes).is_ok();
+    }
+    for _ in 0..8 {
+        if std::fs::rename(&tmp, path).is_ok() {
+            return true;
         }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let ok = std::fs::write(path, bytes).is_ok();
+    let _ = std::fs::remove_file(&tmp);
+    ok
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_save_survives_a_reader_holding_the_file_open() {
+        let d = std::env::temp_dir().join(format!("plinth-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("state.json");
+        assert!(write_atomic(&f, b"one"));
+        // another program has the file open (no delete sharing) while we save
+        let holder = std::fs::File::open(&f).unwrap();
+        let h = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            drop(holder);
+        });
+        assert!(write_atomic(&f, b"two"));
+        h.join().unwrap();
+        assert_eq!(std::fs::read(&f).unwrap(), b"two");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
