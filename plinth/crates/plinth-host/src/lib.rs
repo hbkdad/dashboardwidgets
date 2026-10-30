@@ -6,6 +6,8 @@
 mod bridge;
 mod host;
 mod package;
+mod wallpapers;
 
 pub use host::{DataProvider, Host, HostError, MockProvider, PermissionInfo, Response, WidgetInfo, SDK_PATH, THIRD_PARTY_SLOTS, TRUSTED_SCHEME};
+pub use wallpapers::{Entry as WallpaperEntry, WallpaperStore, WALLPAPER_SCHEME, WEB_CSP};
 pub use package::{normalize_path, Package, PackageError, ENTRY, MAX_FILES, MAX_TOTAL_BYTES};

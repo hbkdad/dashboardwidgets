@@ -1,9 +1,10 @@
 <!doctype html>
 <html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="frame-src http://pwt.localhost http://pw0.localhost http://pw1.localhost http://pw2.localhost http://pw3.localhost http://pw4.localhost http://pw5.localhost http://pw6.localhost http://pw7.localhost; default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="media-src http://pwv.localhost; frame-src http://pwv.localhost http://pwt.localhost http://pw0.localhost http://pw1.localhost http://pw2.localhost http://pw3.localhost http://pw4.localhost http://pw5.localhost http://pw6.localhost http://pw7.localhost; default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#000}
 .wall{position:fixed;inset:-4%;background:__WALL__;__DRIFT__}
+.wp{position:fixed;inset:0;width:100%;height:100%;border:0;background:#000;object-fit:cover}
 .mid{position:fixed;inset:0;background:__MID__;mix-blend-mode:screen}
 .grain{position:fixed;inset:0;opacity:.06;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>")}
 @keyframes drift{from{transform:scale(1.02) translate(0,0)}to{transform:scale(1.06) translate(-1.2%,-1%)}}
@@ -12,7 +13,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 .slot{position:fixed;border-radius:22px;overflow:hidden;background:__GLASS__;backdrop-filter:blur(22px) saturate(1.35);border:1px solid rgba(255,255,255,.16);box-shadow:0 20px 60px rgba(0,0,0,.30)}
 .slot iframe{width:100%;height:100%;border:0;background:transparent;color-scheme:normal}
 </style></head>
-<body><div class="wall"></div><div class="mid"></div><div class="grain"></div><div id="slots"></div>__BANNER____BEACON__
+<body><div class="wall"></div>__WALLPAPER__<div class="mid"></div><div class="grain"></div><div id="slots"></div>__BANNER____BEACON__
 <script>
 // Trusted layer page. A message's identity is the iframe it came from, never anything inside the message.
 const widgets = __WIDGETS__;
@@ -47,8 +48,13 @@ addEventListener('message', (e) => {
     }
   }
 });
+const wp = { v: document.getElementById('wv'), f: document.getElementById('wf'), src: null };
+if (wp.f) wp.src = wp.f.src;
 window.__pause = (on) => {
   document.body.classList.toggle('paused', on);
+  // Wallpaper: a video is paused (its decoder stops); a web wallpaper is unloaded so its script stops completely.
+  if (wp.v) { if (on) wp.v.pause(); else wp.v.play().catch(() => {}); }
+  if (wp.f) wp.f.src = on ? 'about:blank' : wp.src;
   for (const [id, fr] of Object.entries(frames)) {
     if (on) { fr.src = fr.src || fr.frame.src; fr.frame.src = 'about:blank'; }
     else if (fr.src) { fr.frame.src = fr.src; }

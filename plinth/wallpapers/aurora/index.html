@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#050912;overflow:hidden}canvas{width:100%;height:100%;display:block;filter:blur(14px) saturate(1.2)}</style>
+<canvas id="c"></canvas><script>
+// Aurora: a few translucent ribbons drawn at low resolution and scaled up (cheap on the GPU), 24 frames per second.
+const c=document.getElementById('c'),x=c.getContext('2d');const W=c.width=480,H=c.height=270;
+const bands=[{h:150,a:.55,s:.00020,y:.42},{h:185,a:.45,s:.00027,y:.50},{h:265,a:.40,s:.00016,y:.36},{h:120,a:.35,s:.00033,y:.58}];
+let last=0;
+function frame(t){requestAnimationFrame(frame);if(t-last<41)return;last=t;
+x.fillStyle='#050912';x.fillRect(0,0,W,H);x.globalCompositeOperation='lighter';
+for(const b of bands){const g=x.createLinearGradient(0,H*(b.y-.3),0,H*(b.y+.25));g.addColorStop(0,'hsla('+b.h+',90%,60%,0)');g.addColorStop(.5,'hsla('+b.h+',90%,60%,'+b.a+')');g.addColorStop(1,'hsla('+b.h+',90%,60%,0)');
+x.fillStyle=g;x.beginPath();x.moveTo(0,H);for(let i=0;i<=W;i+=8){const y=H*b.y+Math.sin(i*.018+t*b.s*6)*22+Math.sin(i*.007-t*b.s*4)*34;x.lineTo(i,y)}x.lineTo(W,H);x.closePath();x.fill()}
+x.globalCompositeOperation='source-over';}
+requestAnimationFrame(frame);</script>

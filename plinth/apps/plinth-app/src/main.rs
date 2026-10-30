@@ -14,7 +14,7 @@ mod state;
 mod win;
 
 use plinth_core::{impact, PermissionId};
-use plinth_host::{Host, Package};
+use plinth_host::{Host, Package, WallpaperStore, WALLPAPER_SCHEME};
 use plinth_proxy::{Dest, Log, Policy, Verdict};
 use serde_json::{json, Value};
 use state::State;
@@ -40,6 +40,8 @@ enum Ev {
     Save,
     Menu(String),
     Pause(bool),
+    Drop(Vec<PathBuf>),
+    DropHover(bool),
     Auto(u8),
 }
 
@@ -87,6 +89,9 @@ struct App {
     proxy_port: u16,
     beacon: bool,
     paused: bool,
+    walls: Arc<Mutex<WallpaperStore>>,
+    /// Recent wallpaper requests (path, status), for the autotest and diagnostics.
+    wall_log: Arc<Mutex<Vec<(String, u16)>>>,
 }
 
 impl App {
@@ -139,9 +144,25 @@ impl App {
             .collect();
         let shared = info.iter().filter(|w| w.trusted).count();
         let cost = impact::scene_cost_with_motion(shared, n - shared, self.st.motion);
-        json!({ "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        let wall_list: Vec<Value> = self.walls.lock().unwrap().list().iter().map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name, "kind": e.wallpaper.kind.as_str(), "bundled": e.bundled, "author": e.wallpaper.author })).collect();
+        let wcost = match self.walls.lock().unwrap().get(&self.st.wallpaper).map(|e| impact::wallpaper_extra(e.wallpaper.kind)) {
+            Some(c) => format!("adds ≈{} MB and ≈{:.1}% of one core while visible · pauses in games, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct),
+            None => "no extra cost".to_string(),
+        };
+        json!({ "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
+    }
+
+    fn wallpaper_html(&self) -> String {
+        let walls = self.walls.lock().unwrap();
+        let Some(e) = walls.get(&self.st.wallpaper) else { return String::new() };
+        // id and entry are validated to a closed character set by plinth-core, so they cannot break out of the attribute.
+        let url = WallpaperStore::entry_url(&e.wallpaper);
+        match e.wallpaper.kind {
+            plinth_core::WallpaperKind::Video => format!(r#"<video id="wv" class="wp" src="{url}" muted loop autoplay playsinline disablepictureinpicture style="object-fit:{}"></video>"#, e.wallpaper.fit.css()),
+            plinth_core::WallpaperKind::Web => format!(r#"<iframe id="wf" class="wp" sandbox="allow-scripts" src="{url}" title="wallpaper"></iframe>"#),
+        }
     }
 
     fn layer_html(&self) -> String {
@@ -149,6 +170,7 @@ impl App {
         let widgets: Vec<Value> = if self.st.safe { vec![] } else { self.host.lock().unwrap().describe().into_iter().map(|w| json!({ "id": w.id, "slot": w.slot, "trusted": w.trusted })).collect() };
         let banner = if self.st.safe { r#"<div style="position:fixed;left:50%;top:6%;transform:translateX(-50%);padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.55);border:1px solid #ffb454;color:#ffb454;font:600 14px system-ui">Safe mode: widgets are paused</div>"# } else { "" };
         let beacon = if self.beacon { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
+        let wp_html = self.wallpaper_html();
         let mut html = LAYER_HTML.to_string();
         // Cost experiments (and the basis of the Performance mode setting): PLINTH_NO_ANIM drops the wallpaper drift,
         // PLINTH_NO_BLUR replaces the glass blur with a flat translucent panel.
@@ -156,9 +178,10 @@ impl App {
             html = html.replace("backdrop-filter:blur(22px) saturate(1.35);", "");
         }
         html
-            .replace("__DRIFT__", if self.st.motion && std::env::var_os("PLINTH_NO_ANIM").is_none() { "animation:drift 40s ease-in-out infinite alternate" } else { "" })
+            .replace("__DRIFT__", if self.st.motion && wp_html.is_empty() && std::env::var_os("PLINTH_NO_ANIM").is_none() { "animation:drift 40s ease-in-out infinite alternate" } else { "" })
             .replace("__WALL__", s.wall)
-            .replace("__MID__", s.mid)
+            .replace("__WALLPAPER__", &wp_html)
+            .replace("__MID__", if wp_html.is_empty() { s.mid } else { "transparent" })
             .replace("__GLASS__", s.glass)
             .replace("__INK__", s.ink)
             .replace("__ACCENT__", s.accent)
@@ -184,6 +207,23 @@ fn widgets_dir() -> PathBuf {
         }
     }
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../widgets")
+}
+
+fn wallpapers_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("PLINTH_WALLPAPERS") {
+        return PathBuf::from(p);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let beside = exe.with_file_name("wallpapers");
+        if beside.is_dir() {
+            return beside;
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../wallpapers")
+}
+
+fn user_wallpapers_dir() -> PathBuf {
+    std::env::var_os("PLINTH_USER_WALLPAPERS").map(PathBuf::from).unwrap_or_else(|| state::data_dir().join("wallpapers"))
 }
 
 fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> Option<Layer> {
@@ -223,6 +263,26 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebCont
             resp.body(std::borrow::Cow::Owned(r.body)).unwrap()
         });
     }
+    {
+        let (walls, log) = (app.walls.clone(), app.wall_log.clone());
+        b = b.with_custom_protocol(WALLPAPER_SCHEME.to_string(), move |_id, req| {
+            let path = req.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_else(|| "/".into());
+            let range = req.headers().get("range").and_then(|v| v.to_str().ok()).map(String::from);
+            let r = walls.lock().unwrap().serve(&path, range.as_deref());
+            {
+                let mut l = log.lock().unwrap();
+                l.push((path, r.status));
+                if l.len() > 200 {
+                    l.remove(0);
+                }
+            }
+            let mut resp = wry::http::Response::builder().status(r.status);
+            for (k, v) in &r.headers {
+                resp = resp.header(k.as_str(), v.as_str());
+            }
+            resp.body(std::borrow::Cow::Owned(r.body)).unwrap()
+        });
+    }
     use wry::WebViewBuilderExtWindows;
     b = b.with_additional_browser_args(format!("--proxy-server=http://127.0.0.1:{} --proxy-bypass-list=<-loopback>", app.proxy_port));
     let webview = b.build(&window).ok()?;
@@ -231,8 +291,25 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebCont
 
 fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> WebView {
     let p = proxy.clone();
+    let dp = proxy.clone();
     WebViewBuilder::new_with_web_context(ctx)
         .with_html(HUB_HTML)
+        .with_drag_drop_handler(move |ev| {
+            match ev {
+                wry::DragDropEvent::Enter { .. } => {
+                    let _ = dp.send_event(Ev::DropHover(true));
+                }
+                wry::DragDropEvent::Leave => {
+                    let _ = dp.send_event(Ev::DropHover(false));
+                }
+                wry::DragDropEvent::Drop { paths, .. } => {
+                    let _ = dp.send_event(Ev::DropHover(false));
+                    let _ = dp.send_event(Ev::Drop(paths));
+                }
+                _ => {}
+            }
+            true // Plinth handles drops itself; the page never navigates to a dropped file
+        })
         .with_ipc_handler(move |req: wry::http::Request<String>| {
             let _ = p.send_event(Ev::Hub(req.body().clone()));
         })
@@ -306,7 +383,12 @@ fn main() {
     let proxy_port = plinth_proxy::start(policy.clone(), plog.clone()).expect("proxy");
     println!("network proxy on 127.0.0.1:{proxy_port}");
     st.first_run = st.first_run && autotest.is_none();
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false };
+    let walls = Arc::new(Mutex::new(WallpaperStore::new(wallpapers_dir(), user_wallpapers_dir())));
+    println!("wallpapers: {} found", walls.lock().unwrap().list().len());
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())) };
+    if app.walls.lock().unwrap().get(&app.st.wallpaper).is_none() {
+        app.st.wallpaper.clear(); // the chosen wallpaper was removed or is broken: fall back to the Scene gradient
+    }
     app.sync_proxy();
     if app.st.first_run {
         app.persist(); // creates the state file so the welcome sheet shows once
@@ -391,6 +473,12 @@ fn main() {
             nap(2);
             hub(&p, r#"{"cmd":"apply"}"#); // same code path as pressing Apply in the hub
             nap(6);
+            hub(&p, r#"{"cmd":"wallpaper","id":"com.plinth.aurora"}"#); // a bundled web wallpaper goes live
+            nap(3);
+            if let Some(v) = std::env::var_os("PLINTH_TEST_VIDEO") {
+                let _ = p.send_event(Ev::Drop(vec![PathBuf::from(v)])); // same path as dropping a file on the hub
+                nap(5);
+            }
             hub(&p, r#"{"cmd":"grant","id":"com.plinth.pcvitals","perm":"system.cpu","on":false}"#); // user revokes CPU
             nap(5);
             let _ = p.send_event(Ev::Auto(5)); // snapshot activity count
@@ -403,6 +491,8 @@ fn main() {
             nap(6);
             let _ = p.send_event(Ev::Auto(8)); // close it
             nap(6);
+            let _ = p.send_event(Ev::Auto(9)); // ask the layer whether the wallpaper video is playing again
+            nap(2);
             let _ = p.send_event(Ev::Auto(2)); // show desktop
             nap(2);
             let _ = p.send_event(Ev::Auto(3)); // sample + restore
@@ -413,6 +503,7 @@ fn main() {
     let mut auto_visible: Option<bool> = None;
     let mut safe_count: (usize, usize) = (0, 0);
     let mut pause_log: Vec<bool> = Vec::new();
+    let video_probe: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
     let mut applied_before_start = app.st.applied;
@@ -488,6 +579,52 @@ fn main() {
                         reload = app.st.applied;
                         msg = Some(if app.st.safe { "Safe mode on. Widgets are paused and the network is closed.".into() } else { "Safe mode off.".into() });
                     }
+                    "wallpaper" => {
+                        let id = v.get("id").and_then(Value::as_str).unwrap_or("");
+                        let name = app.walls.lock().unwrap().get(id).map(|e| e.wallpaper.name.clone());
+                        match (id.is_empty(), name) {
+                            (true, _) => {
+                                app.st.wallpaper.clear();
+                                msg = Some("Wallpaper cleared. The Scene's own background is used.".into());
+                            }
+                            (false, Some(n)) => {
+                                app.st.wallpaper = id.to_string();
+                                msg = Some(format!("{n} selected. {}", if app.st.applied { "Applied." } else { "Press Apply to put it on your desktop." }));
+                            }
+                            (false, None) => msg = Some("That wallpaper is not available.".into()),
+                        }
+                        reload = app.st.applied;
+                    }
+                    "wallpaper_remove" => {
+                        let id = v.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                        let r = app.walls.lock().unwrap().remove(&id);
+                        match r {
+                            Ok(()) => {
+                                if app.st.wallpaper == id {
+                                    app.st.wallpaper.clear();
+                                    reload = app.st.applied;
+                                }
+                                msg = Some("Removed. Your original video file was not touched.".into());
+                            }
+                            Err(e) => msg = Some(e),
+                        }
+                    }
+                    "wallpaper_folder" => {
+                        let dir = app.walls.lock().unwrap().user_dir().to_path_buf();
+                        let _ = std::fs::create_dir_all(&dir);
+                        let _ = std::process::Command::new("explorer.exe").arg(&dir).spawn();
+                        msg = Some("Opened your wallpapers folder. Press Rescan after adding one.".into());
+                    }
+                    "wallpaper_rescan" => {
+                        app.walls.lock().unwrap().scan();
+                        let n = app.walls.lock().unwrap().list().len();
+                        let gone = !app.st.wallpaper.is_empty() && app.walls.lock().unwrap().get(&app.st.wallpaper).is_none();
+                        if gone {
+                            app.st.wallpaper.clear();
+                            reload = app.st.applied;
+                        }
+                        msg = Some(format!("{n} wallpapers found."));
+                    }
                     "motion" => {
                         app.st.motion = v.get("on").and_then(Value::as_bool).unwrap_or(false);
                         reload = app.st.applied;
@@ -531,6 +668,41 @@ fn main() {
                 }
                 reply(&app, &hub_view, None);
             }
+            Event::UserEvent(Ev::DropHover(on)) => {
+                if let Some(v) = &hub_view {
+                    let _ = v.evaluate_script(&format!("__drop({on})"));
+                }
+            }
+            Event::UserEvent(Ev::Drop(paths)) => {
+                let (mut added, mut last_id, mut err) = (0, None, None);
+                for p in paths.iter().take(8) {
+                    let r = app.walls.lock().unwrap().import_video(p);
+                    match r {
+                        Ok(w) => {
+                            added += 1;
+                            last_id = Some(w.id);
+                        }
+                        Err(e) => err = Some(e),
+                    }
+                }
+                if let Some(id) = last_id {
+                    app.st.wallpaper = id;
+                    if app.st.applied {
+                        if let Some(l) = layer.as_ref() {
+                            let _ = l.webview.load_html(&app.layer_html());
+                        }
+                    }
+                    app.persist();
+                }
+                let m = match (added, err) {
+                    (0, Some(e)) => e,
+                    (n, Some(e)) => format!("Added {n}. {e}"),
+                    (1, None) => "Video added and selected. Press Apply to put it on your desktop.".to_string(),
+                    (n, None) => format!("Added {n} videos; the last one is selected."),
+                };
+                println!("hub: drop handled ({added} added)");
+                reply(&app, &hub_view, Some(&m));
+            }
             Event::UserEvent(Ev::Save) => app.persist(),
             Event::UserEvent(Ev::Menu(name)) => match name.as_str() {
                 "open" => {
@@ -569,13 +741,20 @@ fn main() {
                     fs_test = None;
                     println!("autotest: fullscreen test window closed");
                 }
+                9 => {
+                    if let Some(l) = layer.as_ref() {
+                        let vp = video_probe.clone();
+                        let js = "(()=>{const v=document.getElementById('wv');return v?JSON.stringify({t:v.currentTime,paused:v.paused,ready:v.readyState,err:v.error?v.error.code:0,w:v.videoWidth}):'none'})()";
+                        let _ = l.webview.evaluate_script_with_callback(js, move |r| *vp.lock().unwrap() = Some(r));
+                    }
+                }
                 2 => win::show_desktop(),
                 3 => {
                     auto_visible = Some(win::probe_center_is(0x00FF_00FF));
                     win::show_desktop();
                 }
                 _ => {
-                    let code = autotest_report(&app, auto_visible, safe_count, &sampler.snapshot(), &pause_log);
+                    let code = autotest_report(&app, auto_visible, safe_count, &sampler.snapshot(), &pause_log, &video_probe.lock().unwrap().clone());
                     app.persist();
                     std::process::exit(code);
                 }
@@ -598,7 +777,7 @@ fn total_activity(app: &App) -> usize {
     h.describe().iter().map(|w| h.activity(&w.id).len()).sum()
 }
 
-fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize), snap: &hw::Snapshot, pause_log: &[bool]) -> i32 {
+fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize), snap: &hw::Snapshot, pause_log: &[bool], video_probe: &Option<String>) -> i32 {
     let h = app.host.lock().unwrap();
     println!("\n===== Permission Center log =====");
     let mut allowed: HashMap<String, Vec<String>> = HashMap::new();
@@ -625,6 +804,19 @@ fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize),
     println!("   network: {}", snap.network.as_ref().map_or("none".into(), |v| v.to_string()));
     println!("   info:    {}", snap.info.as_ref().map_or("none".into(), |v| v.to_string()));
     println!("   samples taken: {}", snap.samples);
+    let wall_log = app.wall_log.lock().unwrap().clone();
+    println!("\n===== Wallpaper requests =====");
+    for (p, st) in &wall_log {
+        println!("   {st} {p}");
+    }
+    println!("   video probe: {}", video_probe.as_deref().unwrap_or("not taken"));
+    let video_test = std::env::var_os("PLINTH_TEST_VIDEO").is_some();
+    let video_ok = video_probe
+        .as_deref()
+        .and_then(|r| serde_json::from_str::<Value>(r).ok())
+        .and_then(|v| v.as_str().map(String::from))
+        .and_then(|inner| serde_json::from_str::<Value>(&inner).ok())
+        .map_or(false, |v| v["paused"] == false && v["t"].as_f64().unwrap_or(0.0) > 0.0 && v["err"] == 0 && v["w"].as_u64().unwrap_or(0) > 0);
     let gpu_nvml = snap.gpu.as_ref().map_or(false, |g| g["source"] == "nvml");
     let checks = [
         ("pc vitals: CPU read allowed (granted at first run)", has(&allowed, "com.plinth.pcvitals", "use system.cpu")),
@@ -641,6 +833,10 @@ fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize),
         ("hardware: network and disk counters returned data", snap.network.is_some() && snap.disk.is_some()),
         ("hardware: when NVML is the GPU source, temperature and VRAM are present", !gpu_nvml || snap.gpu.as_ref().map_or(false, |g| g["temp_c"].is_number() && g["vram_total_mb"].is_number())),
         ("governor: a fullscreen app paused the widgets, and closing it resumed them", pause_log.windows(2).any(|w| w == [true, false])),
+        ("wallpaper: the bundled web wallpaper was served (200) from its own origin", wall_log.iter().any(|(p, st)| p.contains("com.plinth.aurora/index.html") && *st == 200)),
+        ("wallpaper: nothing outside an allow-listed file type was ever requested successfully", wall_log.iter().all(|(p, st)| *st != 200 || plinth_core::wallpaper::mime_for(p.split('?').next().unwrap_or("")).is_some())),
+        ("wallpaper: the dropped video was imported and streamed in byte ranges (206), or no video was supplied", !video_test || wall_log.iter().any(|(p, st)| p.contains("/user.") && *st == 206)),
+        ("wallpaper: the video is playing after the governor paused and resumed it, or no video was supplied", !video_test || video_ok),
         ("layer visible after Show Desktop (beacon pixel read at screen center)", visible == Some(true)),
     ];
     println!("\n===== Checks =====");
