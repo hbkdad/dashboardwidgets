@@ -6,7 +6,7 @@ Mirrors `../design/business-and-roadmap.md` §5. Targets are planning assumption
 - [x] Core logic crate: manifest, broker, governor (done, 12 tests)
 - [~] Spike A: GDI host FAILS Win+D on build 26300; **WebView2 host PASSES** (workerw/progman strategies, 9/9 pixels). lock/sleep/display/DPI/icon z-order/input/other builds NOT TESTED. See `spikes/layer-probe/RESULTS.md`.
 - [~] Spike B: release build, 5 sandboxed iframe widgets = 158.7 MB private / 359 MB WS sum / 8 processes / 0.21% of one core idle (blank page 146 MB); 10 widgets 166 MB. Fixed WebView2 cost dominates, so <150 MB target NOT met. Iframes add no processes (web-level isolation only). Not tested: real widgets, low-end HW, multi-monitor, hours-long leak check. See `spikes/webview-probe/RESULTS.md`.
-- [ ] Spike C: hostile-widget suite against Plinth's own sandbox (file read, process spawn, undeclared host, cross-widget storage, CSP bypass). Exit: 0 escapes.
+- [~] Spike C: srcdoc sandbox alone leaks network and starves the host (7/8 runs). **Per-origin custom-protocol delivery + header CSP + host frame-src: 0 server hits, hog contained (5/5), about +29 MB and +1 process per widget.** Next: hybrid design (first-party shared origin, third-party own origin), memory-bomb test, wire broker to the real host. See `spikes/sandbox-probe/RESULTS.md`.
 - [ ] Interviews and landing page (non-code, see design docs)
 - Skipped by decision: hands-on Seelen UI test.
 
