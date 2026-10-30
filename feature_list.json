@@ -117,6 +117,18 @@
       "name": "Security Center (Windows security status, connections, startup items)",
       "status": "not_started",
       "evidence": "planned v0.9 (D22)"
+    },
+    {
+      "id": "F19",
+      "name": "Monitor selector: detection, layout diagram, Identify, widget-to-monitor assignment, per-monitor layers, edge-case recovery",
+      "status": "not_started",
+      "evidence": "designed: PRD 5.4, architecture 11, decisions D25-D27; APIs verified against Microsoft Learn (research/monitors-and-wallpapers.md); NOT TESTED on multi-monitor hardware"
+    },
+    {
+      "id": "F20",
+      "name": "Wallpaper library: bundled images, folder scanning and watching, thumbnails, dedupe, fit modes, slideshow, per-monitor wallpapers",
+      "status": "not_started",
+      "evidence": "designed: PRD 5.4, architecture 12, decisions D24, D28; video and web wallpapers already shipped (F17)"
     }
   ]
 }

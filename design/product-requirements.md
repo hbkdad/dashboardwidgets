@@ -61,8 +61,8 @@ MVP explicitly excludes the store and the full drag-and-drop builder (see 5.2; M
 | V2 | **Built-in curated marketplace** | In-app browse/search/install/update; review queue before listing | G1, G4, G7 |
 | V3 | **Creator revenue share** | Stripe Connect payouts (paid license: external fee, see business doc) | G7 |
 | V4 | **Signed packages + malware review** | Developer certs, publisher verification, static scan, permission diff on update | G2 |
-| V5 | **Animated wallpaper support (video, web)** | Reuses the runtime; shares governor | G4 |
-| V6 | **Multi-monitor/HDR/DPI polish** | Per-monitor Scenes; HDR tone-mapping for video; test matrix | G8 |
+| V5 | **Animated wallpaper support (video, web)** | **Moved to MVP and shipped in v0.8.0 (D29).** Reuses the layer; shares the governor; measured cost in the Impact Meter | G4 |
+| V6 | **HDR / mixed-DPI polish** | HDR tone-mapping for video; extended test matrix. (The monitor selector itself is MVP, see 5.4.) | G8 |
 | V7 | **Auto-updates** for app + installed content | Delta updates, one-click rollback | G3, G4 |
 
 ### 5.3 Later / rejected
@@ -73,6 +73,44 @@ MVP explicitly excludes the store and the full drag-and-drop builder (see 5.2; M
 - **Lua/native plugin execution** (rejected): breaks the security model. Power users use JS widgets with permissions.
 - **Rainmeter skin import** (investigate later): could ease migration but .ini+plugins semantics are large; UNVERIFIED feasibility.
 - **Subscription that disables the app on lapse** (rejected): known user pain [Stardock FAQ].
+
+### 5.4 Wallpapers and monitors (addendum 2026-10-30; research in `research/monitors-and-wallpapers.md`)
+Priority and phase, with the reason. Decisions D24 to D29.
+| ID | Feature | Phase | Why |
+|---|---|---|---|
+| W1 | Wallpaper picker: grid, large preview, search, favorites, recent, bundled starter library, one-click apply with preview, per-wallpaper fit (Fill, Fit, Stretch, Tile, Span, Center), letterbox color, slideshow with interval and random order | **MVP** | First-run impression and the first thing a PC builder does; native fit modes exist [S44] |
+| W2 | Folder scanning: add several folders, recursive, exclude subfolders, watch for changes, thumbnail cache, metadata, dedupe, graceful missing/corrupt/offline handling, scanned images are first-class library items | **MVP** | Users already own collections; without it the library is empty |
+| W3 | Static image formats: JPG, PNG, WebP, BMP | **MVP** | Requested; WebP may need a converted cache copy (NOT TESTED) |
+| W4 | Animated wallpapers (video, web) | **MVP (shipped v0.8.0)** | See D29; cost stated honestly in the Impact Meter. GIF is not supported yet (convert to video) |
+| W5 | Profiles save wallpaper(s) and widget layout together | **MVP** | Scenes already bundle both; extended to per-monitor entries |
+| W6 | Legibility assist: none / dim / blur / auto behind widgets | **MVP (dim and blur), v1.0 (auto from measured luminance)** | A busy wallpaper must not make widgets unreadable |
+| M11 | Monitor detection, layout diagram matching the physical arrangement, per-monitor facts (name, resolution, scale, orientation, refresh rate, primary), Identify monitors | **MVP** | Prerequisite for everything below |
+| M12 | Widget-to-monitor assignment: settings dropdown, drag in the diagram, click widget then monitor, right-click Move to monitor, keep size/settings/relative position | **MVP** | Mandatory per owner; competitors fail at persistence |
+| M13 | Per-monitor layouts: different widgets per monitor, same widget type on several monitors with different settings; per-monitor wallpapers | **MVP** | Mandatory per owner |
+| M14 | Persistence and edge cases (table below), Reset widget positions, Bring all widgets to primary monitor | **MVP** | This is where the documented Rainmeter failure lives [S52] |
+| M15 | A widget that spans monitors | **Later** | Mixed DPI makes one window unreliable; rarely needed; the Span wallpaper covers the common case |
+
+**User stories and acceptance criteria**
+- W1: As a new user I pick a wallpaper from the bundled library in under 30 seconds. Accept: first run shows at least 8 bundled wallpapers; preview before commit; Apply puts it on the chosen monitor; Revert restores the previous wallpaper, fit mode and color per monitor.
+- W2: As a user with a wallpaper folder I point Plinth at it and see the images. Accept: a 1,000-image folder is browsable while still scanning; files added, renamed, moved or deleted appear within 5 seconds for local folders and within 5 minutes for network/USB folders; a missing file shows a "file missing" card with Locate and Remove; an unplugged drive marks its items offline instead of deleting them; a corrupt or oversized file is skipped with a visible reason; identical files appear once.
+- M11/M12: As a user with three monitors I put the clock on the left screen and the vitals on the middle one. Accept: the diagram matches Windows' arrangement (checked against Display settings); Identify flashes a number on each screen; assignment is stored per widget.
+- M14: As a laptop user I undock and redock without losing my layout. Accept: every row of the edge-case table below is a test.
+
+**Edge-case behavior (the contract)**
+| Situation | Behavior |
+|---|---|
+| Assigned monitor is unplugged or off | Each widget keeps its `home` monitor. It is shown on the fallback monitor (user choice, default primary), clamped fully on screen, with a small "parked" badge in the hub. It returns to `home` automatically 2 seconds after the monitor's identity reappears. Parked placement is never saved as the home placement |
+| Monitor appears late after wake or dock (the Rainmeter failure [S52]) | Display events are debounced (1.5 s); persistence only ever writes `home` data; a late-appearing monitor therefore just causes the widgets to move back |
+| Resolution, scaling or orientation changes | Positions are anchor plus offsets in device-independent units; the layout is recomputed from the saved data; widgets stay inside the work area; a portrait/landscape change keeps relative positions |
+| Widget larger than the monitor | Scaled down to fit (not below 50%); if it still does not fit, it is shown clipped with a notice and a "shrink to fit" action |
+| Primary monitor changes | Assignments follow monitor identity, not "primary". Widgets assigned by role (imported setups) follow the new primary |
+| Two identical monitor models | Told apart by device path and connector instance; if the user swaps ports they swap (documented limitation, NOT TESTED); Identify helps recover |
+| Mirrored (duplicate) displays | Treated as one monitor |
+| Remote desktop session | Different monitor set: widgets park and return on local reconnect |
+| Virtual desktops | The layer sits in the desktop window, so widgets are **global across virtual desktops** (INFERENCE, NOT TESTED). Per-virtual-desktop layouts are Later. OS per-monitor wallpaper with several virtual desktops: NOT TESTED |
+| Layout is messed up | "Bring all widgets to primary monitor" parks everything without changing homes; "Reset widget positions" restores the Scene's default layout (with undo) |
+
+**Non-goals (this addendum):** spanning widgets, per-virtual-desktop layouts, GIF files, HDR wallpapers, wallpaper marketplace/download in MVP, cloud sync of the library, AI upscaling or generation.
 
 ## 6. Non-goals for v1
 No shell replacement (taskbar, Start menu, Alt+Tab, tiling; this is the deliberate contrast with Seelen UI), no desktop icon management (Fences' territory), no cross-platform, no AI features, no social network, no scripted-widget store listings until the Permission Center and review pipeline are proven.

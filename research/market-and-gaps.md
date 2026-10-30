@@ -58,6 +58,8 @@ Complaint pattern (INFERENCE + S15/S17): users tolerate $5–10 one-time prices;
 | 10 | Multi-monitor / HDR / DPI correctness | ◐ | ? | ✔ | ✔ | Partly; HDR UNVERIFIED |
 | 11 | Accessibility (scaling, contrast, reduced motion) | ✘ | ? | ✘ | ? | **Yes** |
 | 12 | Settings/profile sync and sharing "my setup" | ✘ | ✘ | ◐ | ✘ | **Yes** |
+| 13 | Per-monitor widget placement that survives plug/unplug, resolution and DPI changes | ✘ (documented failure: skins pile onto one monitor and autosave overwrites good positions [S52]) | ? | n/a | n/a | **Yes** (evidence is user reports only) |
+| 14 | Wallpaper library (folders, favorites, per-monitor, slideshow) in the same place as widgets | ✘ | ◐ (DeskScapes, separate app) | ✔ (wallpapers only, no widgets) | ◐ | Partly: the wallpaper half exists elsewhere; the **combination with widgets and profiles** does not |
 
 ## 5. Failure modes to avoid (from Phase 1)
 1. Performance bloat from poorly built community content (Rainmeter visualizers). [S4]
@@ -100,3 +102,6 @@ Score = breadth across segments × incumbents failing × strength of evidence. E
 2. Collect missing numbers: Workshop subscribers, DeviantArt Rainmeter counts, YouTube "desktop setup" views, Google Trends.
 3. Landing page + waitlist (free) to measure sign-up rate from r/Rainmeter, r/desktops, r/Windows11 posts (read subreddit rules first).
 4. Pricing test with 3 price points on the waitlist survey.
+
+## 10. Addendum (2026-10-30): wallpaper management and multi-monitor placement
+Full evidence and API verification: `research/monitors-and-wallpapers.md`. Short version: these are **real but narrow gaps**. Per-monitor wallpapers already exist in Windows, Wallpaper Engine and DisplayFusion [S53, S54]; what is missing is (a) placement that survives display changes (Rainmeter's documented failure is a persistence bug: transient wrong monitor positions get autosaved [S52]) and (b) one hub that stores wallpapers, widgets and monitor assignments in one profile. Evidence strength: **C** (user reports and weak how-to pages, no demand numbers). They are added as gap rows 13 and 14 and fold into top-10 gaps #4 (unified hub) and the multi-monitor part of the matrix. For the PC-builder beachhead (D16) multi-monitor is common, so the build priority is high even though the evidence is thin; the validation plan (section 9) should ask builders directly.

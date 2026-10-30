@@ -57,3 +57,18 @@ Tags: **[F]** fetched and read directly. **[S]** seen only as a search-result sn
 - XWidget, Nexus Dock (Winstep), Cairo Shell, Conky current status.
 - Any Reddit/Steam review quotes directly (Reddit fetch was not attempted; no verbatim quotes are used anywhere in this package).
 - Why ObjectDock/Samurize faded: no source states it. The "why" in competitor-analysis.md is labelled inference.
+
+## Addendum sources (2026-10-30): wallpapers and monitors
+- S42 IDesktopWallpaper interface: https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-idesktopwallpaper
+- S43 IDesktopWallpaper::SetWallpaper: https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-idesktopwallpaper-setwallpaper
+- S44 DESKTOP_WALLPAPER_POSITION: https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-desktop_wallpaper_position
+- S45 IDesktopWallpaper::SetSlideshow: https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-idesktopwallpaper-setslideshow
+- S46 EnumDisplayMonitors: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumdisplaymonitors
+- S47 GetDpiForMonitor: https://learn.microsoft.com/en-us/windows/win32/api/shellscalingapi/nf-shellscalingapi-getdpiformonitor
+- S48 DisplayConfigGetDeviceInfo: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-displayconfiggetdeviceinfo
+- S49 DISPLAYCONFIG_TARGET_DEVICE_NAME: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-displayconfig_target_device_name
+- S50 WM_DISPLAYCHANGE: https://learn.microsoft.com/en-us/windows/win32/gdi/wm-displaychange
+- S51 High DPI desktop application development: https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows
+- S52 Rainmeter forum threads on skins moving after monitor/resolution changes (user reports): https://forum.rainmeter.net/viewtopic.php?p=207081 , https://forum.rainmeter.net/viewtopic.php?p=220867 , https://forum.rainmeter.net/viewtopic.php?p=10719 ; layout switcher project: https://github.com/joesiu/rainmeterautolayout
+- S53 Per-monitor wallpaper how-tos (low-quality, SEO-style pages; virtual-desktop claim): https://helpdeskgeek.com/how-to-set-different-wallpaper-on-each-monitor-in-windows-10/ , https://geekrewind.com/how-to-show-a-different-background-wallpaper-on-each-display-in-windows-11 , https://www.neowin.net/news/how-to-set-different-wallpapers-on-different-monitors-in-windows-11/
+- S54 DisplayFusion wallpaper feature page: https://www.displayfusion.com/features/wallpaper/ ; Wallpaper Engine Steam discussion on DisplayFusion coordination: https://steamcommunity.com/app/431960/discussions/2/1291816880493846546
