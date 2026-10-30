@@ -3,6 +3,9 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-10-30
+End-to-end host demo, decisions log, license, and a security correction with a validated mitigation.
 ### Added
 - `apps/host-demo`: plinth-host in WebView2 with real fixture widgets (`fixtures/widgets/clock-cpu`, `hostile`), Permission Center log, 11 automated checks (11 of 11 pass), forced-proxy experiment (`PLINTH_PROXY=1`).
 - `design/decisions.md` (D1-D12), Apache-2.0 `LICENSE`.
