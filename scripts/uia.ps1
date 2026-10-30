@@ -20,3 +20,16 @@ function Invoke-ByName($win, [string]$name) {
   try { $p = $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern); $p.Invoke(); return "invoked: $name" }
   catch { try { $p = $e.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern); $p.Toggle(); return "toggled: $name" } catch { try { $e.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select(); return "selected: $name" } catch { return "NO PATTERN: $name" } } }
 }
+function Find-Like($win, [string]$pattern) {
+  $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -like $pattern } | Select-Object -First 1
+}
+function Invoke-Element($e) {
+  if (-not $e) { return "NOT FOUND" }
+  try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return "invoked" }
+  catch { try { $e.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select(); return "selected" } catch { try { $e.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle(); return "toggled" } catch { return "NO PATTERN" } } }
+}
+function Set-Text($win, [string]$name, [string]$text) {
+  $e = Find-ByName $win $name
+  if (-not $e) { return "NOT FOUND: $name" }
+  try { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($text); return "set: $name" } catch { return "NO VALUE PATTERN: $name" }
+}

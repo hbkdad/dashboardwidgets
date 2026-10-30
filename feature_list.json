@@ -122,14 +122,16 @@
     {
       "id": "F19",
       "name": "Monitor selector: detection, layout diagram, Identify, widget-to-monitor assignment, per-monitor layers, edge-case recovery",
-      "status": "not_started",
-      "evidence": "designed: PRD 5.4, architecture 11, decisions D25-D27; APIs verified against Microsoft Learn (research/monitors-and-wallpapers.md); NOT TESTED on multi-monitor hardware"
+      "status": "partial",
+      "evidence": "fake-monitor lifecycle test 13/13 (3 monitors, unplug, replug, park all, reset, undo); real two-monitor enumeration and layers verified (widgets rendered live on the case screen); hub click-then-click and drag assignment verified; 80 core tests incl. 14 for reconcile",
+      "missing": "same widget type on several monitors (one instance per widget today); right-click Move to monitor; dock/undock, port swap, identical monitors, mixed DPI, virtual desktops NOT TESTED"
     },
     {
       "id": "F20",
       "name": "Wallpaper library: bundled images, folder scanning and watching, thumbnails, dedupe, fit modes, slideshow, per-monitor wallpapers",
-      "status": "not_started",
-      "evidence": "designed: PRD 5.4, architecture 12, decisions D24, D28; video and web wallpapers already shipped (F17)"
+      "status": "partial",
+      "evidence": "library end-to-end test 10/10 on the real monitors (scan, dedupe, corrupt file, watcher, compose at exact resolution, OS wallpaper set per monitor, slideshow, exact Revert); 10,003-picture benchmark; click test 50/50",
+      "missing": "directory-change notifications (polling every 5 s), hub memory at 10,000 pictures not measured, thumbnails of animated wallpapers, GPU load, per-monitor slideshow timing under battery saver untested"
     }
   ]
 }

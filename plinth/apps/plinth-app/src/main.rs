@@ -182,7 +182,10 @@ impl App {
             .map(|e| json!({ "seq": e.seq, "method": e.method, "target": e.target, "verdict": if e.verdict == Verdict::Allow { "Allow" } else { "Deny" } }))
             .collect();
         let shared = info.iter().filter(|w| w.trusted).count();
-        let cost = impact::scene_cost_with_motion(shared, n - shared, self.st.motion);
+        let mut cost = impact::scene_cost_with_motion(shared, n - shared, self.st.motion);
+        let extra_layers = layer_targets(self).len().saturating_sub(1) as f32;
+        cost.ram_mb += impact::EXTRA_LAYER.ram_mb * extra_layers;
+        cost.cpu_pct += impact::EXTRA_LAYER.cpu_pct * extra_layers;
         let wall_list: Vec<Value> = self.walls.lock().unwrap().list().iter().map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name, "kind": e.wallpaper.kind.as_str(), "bundled": e.bundled, "author": e.wallpaper.author })).collect();
         let wcost = match self.walls.lock().unwrap().get(&self.st.wallpaper).map(|e| impact::wallpaper_extra(e.wallpaper.kind)) {
             Some(c) => format!("adds ≈{} MB and ≈{:.1}% of one core while visible · pauses in games, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct),
@@ -391,7 +394,9 @@ fn user_wallpapers_dir() -> PathBuf {
 }
 
 fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, html: &str, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> Option<Layer> {
-    let window = WindowBuilder::new().with_title("Plinth desktop layer").with_decorations(false).with_visible(false).with_resizable(false).build(target).ok()?;
+    // No drop shadow: tao reserves an invisible shadow border (8 px) around undecorated windows, which would inset the layer.
+    use tao::platform::windows::WindowBuilderExtWindows as _;
+    let window = WindowBuilder::new().with_title("Plinth desktop layer").with_decorations(false).with_undecorated_shadow(false).with_visible(false).with_resizable(false).build(target).ok()?;
     let fake = app.fake.lock().unwrap().is_some();
     let attached = !fake && std::env::var_os("PLINTH_NO_ATTACH").is_none() && win::attach_to_desktop(window.hwnd() as isize, m.x, m.y, m.width_px as i32, m.height_px as i32);
     if !attached {

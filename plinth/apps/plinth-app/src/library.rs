@@ -623,6 +623,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    /// Benchmark, run by hand: PLINTH_BENCH_DIR=<folder of many pictures> cargo test --release -p plinth-app bench_scan -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_scan() {
+        let Some(dir) = std::env::var_os("PLINTH_BENCH_DIR") else { return };
+        let d = sandbox();
+        let mut l = Library::load(d.join("lib.json"), d.join("thumbs"), d.join("composed"), None);
+        l.add_root(&dir.to_string_lossy()).unwrap();
+        let t = std::time::Instant::now();
+        let (roots, items) = l.snapshot();
+        l.apply_scan(scan(&roots, &items));
+        let first = t.elapsed();
+        let n = l.items.len();
+        let t = std::time::Instant::now();
+        let (roots, items) = l.snapshot();
+        l.apply_scan(scan(&roots, &items));
+        let again = t.elapsed();
+        let t = std::time::Instant::now();
+        l.save();
+        let save = t.elapsed();
+        let t = std::time::Instant::now();
+        let page = l.page("", Filter::All, 5000, 60);
+        let q1 = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = l.page("pic_0042", Filter::All, 0, 60);
+        let q2 = t.elapsed();
+        let t = std::time::Instant::now();
+        let loaded = Library::load(d.join("lib.json"), d.join("thumbs"), d.join("composed"), None);
+        let load = t.elapsed();
+        println!("BENCH items={n} first_scan={first:?} unchanged_rescan={again:?} save={save:?} ({} KB) load={load:?} ({}) page_query={q1:?} search={q2:?} page_items={}", std::fs::metadata(d.join("lib.json")).map_or(0, |m| m.len() / 1024), loaded.items.len(), page["items"].as_array().map_or(0, |a| a.len()));
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Benchmark, run by hand: PLINTH_BENCH_IMAGES=<folder of large pictures> cargo test --release -p plinth-app bench_thumbs -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn bench_thumbs() {
+        let Some(dir) = std::env::var_os("PLINTH_BENCH_IMAGES") else { return };
+        let d = sandbox();
+        let files: Vec<String> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path().to_string_lossy().to_string()).filter(|p| core::is_image(p)).collect();
+        let t = std::time::Instant::now();
+        for (i, f) in files.iter().enumerate() {
+            make_thumb(f, &d.join(format!("t{i}.jpg"))).unwrap();
+        }
+        let per = t.elapsed() / files.len().max(1) as u32;
+        let dims = image::image_dimensions(&files[0]).unwrap();
+        let t = std::time::Instant::now();
+        compose(&files[0], (1920, 1080), FitMode::Fill, (0, 0, 0), (0, 0), (1920, 1080), &d.join("c.jpg")).unwrap();
+        println!("BENCH thumbs: {} pictures of {}x{}: {:?} each (one thread); compose to 1080p: {:?}", files.len(), dims.0, dims.1, per, t.elapsed());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn composed_names_are_file_safe_and_deterministic() {
         let n = composed_name("0123456789abcdef0123456789abcdef", (1920, 1080), FitMode::Span, "#1A2B3C", (-1280, 0), (3200, 1080));

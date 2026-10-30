@@ -168,3 +168,11 @@ Unit (Rust), golden-image tests for declarative renderer, multi-monitor/DPI matr
 
 ## 13. Impacts of the addendum on earlier decisions
 Animated wallpapers move into MVP (D29, already shipped). One layer per monitor replaces the single primary-monitor layer built so far (v0.8.0 only handles the primary monitor). Product name, stack (wry/tao WebView2 shell, Rust crates) and MVP scope otherwise unchanged; the `windows` crate is added for COM (D24).
+
+## 14. As built in v0.10.0 (measured on this PC, release build, single runs)
+- Monitors: `mon.rs` enumerates with `EnumDisplayMonitors`/`GetMonitorInfoW`, `GetDpiForMonitor`, `QueryDisplayConfig` and `DisplayConfigGetDeviceInfo`; the shell's `IDesktopWallpaper` monitor ids equal the DisplayConfig device paths here, and Plinth still matches shell monitors by rectangle. A watcher thread polls every 500 ms and applies a change only after it has held still for 2 s.
+- Layers: one window per monitor needing one, one shared WebView2 environment. Second layer on the real case screen: +41 MB, +1 process, unchanged idle CPU. The layer attach strips every frame style and tao's invisible shadow border (client rectangle verified equal to the monitor size).
+- Library: JSON index (D32). 10,003 pictures: first scan 30.7 s, unchanged rescan 18 ms, save 22 ms, load 28 ms, page 3.4 ms, search 2.3 ms. Thumbnails: 3 workers, 26.5 ms each for 2560x1440 JPEGs, 320 px JPEG, cached by content key. Compose to 1080p: 381 ms. Targets in section 6 for scan speed (300 files/s), page paint and thumbnails are met; hub memory with a 10,000-item library was NOT measured.
+- Pictures reach the hub through the `pwth.localhost` protocol (async, worker pool) and the layers through `pwc.localhost`; both only serve validated file names from Plinth's own cache folders. The hub CSP allows `img-src` only from the thumbnail origin.
+- Safety: Plinth only reads user pictures; it writes cache copies in its own folder and removes library entries, never user files. Wallpaper sandbox rules (D23) are unchanged.
+

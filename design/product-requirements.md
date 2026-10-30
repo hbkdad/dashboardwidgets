@@ -110,6 +110,11 @@ Priority and phase, with the reason. Decisions D24 to D29.
 | Virtual desktops | The layer sits in the desktop window, so widgets are **global across virtual desktops** (INFERENCE, NOT TESTED). Per-virtual-desktop layouts are Later. OS per-monitor wallpaper with several virtual desktops: NOT TESTED |
 | Layout is messed up | "Bring all widgets to primary monitor" parks everything without changing homes; "Reset widget positions" restores the Scene's default layout (with undo) |
 
+**Build status at v0.10.0 (what exists and what was verified):**
+- Built and verified on this PC: monitor detection and diagram (real two-monitor layout), Identify, assignment by dropdown, by drag and by click-then-click, per-monitor layer windows, parked widgets and exact return (fake-monitor lifecycle test, 13 of 13), Bring all to primary, Reset with Undo, per-monitor motion wallpapers, picture library with folders, search, favorites, recent, problems, thumbnails, duplicate hiding, slideshow, per-monitor picture with fit mode and bars color, Revert (library end-to-end test, 10 of 10), shading behind widgets, profiles.
+- Changed from the plan: new pictures and renames appear within about 5 s while the hub is open (60 s otherwise), by polling, not notifications; right-click "Move to monitor" on the widget itself is NOT built (the Monitors view and the widget list do it); the same widget type on several monitors (M13, second half) is NOT built because each widget is still a single instance; GIF and WebP-through-the-OS are not used (pictures are decoded by Plinth and composed, so WebP works).
+- NOT TESTED: unplug during a real dock sequence, two identical monitor models, mixed DPI, several virtual desktops.
+
 **Non-goals (this addendum):** spanning widgets, per-virtual-desktop layouts, GIF files, HDR wallpapers, wallpaper marketplace/download in MVP, cloud sync of the library, AI upscaling or generation.
 
 ## 6. Non-goals for v1
