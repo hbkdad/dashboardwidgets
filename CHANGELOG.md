@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+Monitors and the picture wallpaper library (owner addendum; decisions D24-D29, D31-D33).
+### Added
+- `plinth-core::monitors`: monitor model, widget placement (home monitor, anchor, offsets and size in device-independent units), the pure `reconcile` function (unplug parks widgets on a fallback, replug restores exactly, resolution and DPI changes keep widgets on screen, oversize widgets shrink then clip), `bring_all_to`. `plinth-core::fit`: Fill, Fit, Stretch, Tile, Span, Center geometry. `plinth-core::library`: scan diffing with rename detection, search, favorites and recent filters, slideshow order (13+ tests each).
+- `mon.rs`: real monitor enumeration (stable device path, EDID fingerprint, friendly name, DPI, refresh rate, work area) and a fake-monitor mode for tests. `os_wall.rs`: the OS wallpaper per monitor through `IDesktopWallpaper`, snapshot and exact Revert, native folder and file pickers.
+- One desktop layer window per monitor that has widgets or a motion wallpaper; a monitor with nothing to draw has no layer.
+- Hub "Monitors" view: layout diagram matching the real arrangement, Identify monitors, widget-to-monitor assignment by dropdown, by dragging, or by click then click, parked-widget notice, fallback monitor, Bring all widgets to the primary monitor, Reset positions with Undo, per-monitor wallpaper.
+- Picture library: bundled starter set (12 original generated wallpapers, `scripts/make-bundled-wallpapers.py`), your own folders (recursive, skip subfolders, watched every 5 s while the hub is open), index with duplicate detection by content, rename and move tracking, thumbnails (320 px, cached), virtualized grid with search, Favorites, Recent, Problems, detail panel with fit mode, bars color, monitor choice and slideshow, missing/corrupt/offline states with Locate and Remove. Pictures are composed per monitor at its exact resolution and set as the OS wallpaper; Revert restores the previous wallpaper exactly.
+- Legibility shading behind widgets (None, Dim, Soften and dim) and named Profiles that save wallpapers, widgets and monitor assignments together.
+- Autotests: fake-monitor lifecycle (13 checks), library end to end on the real monitors (10 checks), click test now 50 checks.
+### Fixed
+- The desktop layer was inset by about 8 px on every side (client 1904x1071 on a 1920x1080 screen): tao reserved an invisible shadow border and the old frame style bits stayed set. Found by reading the real window rectangles with two monitors; fixed (client now exactly the monitor size).
+- A pictures with the wrong extension (a JPEG saved as .png) was reported unreadable; the format is now guessed from the content.
+### Measured (this PC, release build, single runs; see `impact.rs`)
+- Second layer window on the real 1280x400 case screen: +41 MB, +1 process, idle CPU unchanged (264.7 to 305.7 MB).
+- 10,003-picture library: first scan 30.7 s (about 326 files/s, runs in the background), unchanged rescan 18 ms, index save 22 ms (3.2 MB), load 28 ms, one grid page 3.4 ms, search 2.3 ms. Thumbnails 26.5 ms each from 2560x1440 JPEGs (one thread); composing a 1080p wallpaper 381 ms.
+### Known limits
+- One instance per widget: the same widget type on several monitors with different settings is NOT built yet.
+- Monitor hot-plug is detected by polling twice a second with a 2 s settle time, not by display events; identity stability across docks, port swaps and two identical monitor models is NOT TESTED.
+- Per-monitor wallpaper while several virtual desktops exist is NOT TESTED. The intermittent click-test failure (second launch not bringing the hub back) is still unexplained.
+
 ## [0.9.0] - 2026-10-30
 Security Center (decision D30) plus the wallpaper/monitor addendum design (D24-D29, `research/monitors-and-wallpapers.md`).
 ### Added

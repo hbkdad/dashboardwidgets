@@ -12,7 +12,7 @@ The underserved opportunity is a **safe, update-proof, no-code desktop-widget-an
 - **One hub, one profile:** wallpapers, widgets, monitor assignments and a legibility setting save and restore together; Revert undoes everything.
 - **Honest cost:** the Impact Meter shows what each wallpaper and widget costs, and everything pauses in games, on battery and in remote sessions.
 
-Build status: monitoring, pause governor and video/web wallpapers shipped (v0.8.0). Folder scanning, static image library and the monitor selector are designed and next (see `plinth/ROADMAP.md`, `design/product-requirements.md` section 5.4, `design/architecture.md` sections 11 to 13, `research/monitors-and-wallpapers.md`).
+Build status (v0.10.0): monitoring, pause governor, video and animated wallpapers, the Security Center, the monitor selector (per-monitor widgets and wallpapers, unplug and replug recovery) and the picture library (your folders, thumbnails, favorites, slideshow, per-monitor fit modes, exact Revert) all work and are tested on a real two-monitor PC. Not yet: the same widget on several monitors, dock and mixed-DPI testing. See `plinth/ROADMAP.md`, `design/product-requirements.md` section 5.4, `design/architecture.md` sections 11 to 14, `research/monitors-and-wallpapers.md`.
 
 ## The product: Plinth (working name; trademark UNVERIFIED)
 **Decision made: compete on the narrowed wedge** (safety, no-code builder, creator payouts, no shell replacement).

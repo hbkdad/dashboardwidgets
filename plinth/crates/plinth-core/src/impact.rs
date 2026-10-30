@@ -43,6 +43,12 @@ pub fn wallpaper_extra(kind: crate::wallpaper::WallpaperKind) -> Impact {
     }
 }
 
+/// Extra cost of one more desktop layer window (one more monitor with widgets or a motion wallpaper), sharing the same WebView2
+/// environment: measured on this PC with two real monitors (the second a 1280x400 case screen showing two widgets), release build,
+/// single 20 s runs: 264.7 MB with one layer, 305.7 MB with two (+41 MB, +1 process), idle CPU 0.31% in both. A monitor with no
+/// widgets and only a static picture needs no layer at all (the picture is set through the OS).
+pub const EXTRA_LAYER: Impact = Impact { ram_mb: 41.0, cpu_pct: 0.1 };
+
 pub fn total(parts: &[Impact]) -> Impact {
     parts.iter().fold(Impact { ram_mb: 0.0, cpu_pct: 0.0 }, |a, b| Impact { ram_mb: a.ram_mb + b.ram_mb, cpu_pct: a.cpu_pct + b.cpu_pct })
 }
@@ -78,6 +84,12 @@ pub fn scene_cost_with_motion(shared: usize, isolated: usize, motion: bool) -> I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_extra_layer_is_cheap_next_to_the_first() {
+        assert!(EXTRA_LAYER.ram_mb < HOST_FIXED.ram_mb / 4.0);
+        assert_eq!(rate(&EXTRA_LAYER), Rating::Moderate);
+    }
 
     #[test]
     fn wallpaper_costs_are_heavier_than_widgets() {

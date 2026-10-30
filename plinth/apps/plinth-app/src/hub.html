@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: http://pwth.localhost; base-uri 'none'; form-action 'none'">
 <title>Plinth</title>
 <style>
 :root{--bg:#0b0c0f;--s1:#12141a;--s2:#1a1d26;--s3:#242836;--bd:rgba(255,255,255,.09);--bd2:rgba(255,255,255,.18);--tx:#eef0f6;--mut:#9aa1b5;--faint:#8a91ab;--sig:#7cf2c8;--ink:#04281d;--amb:#ffb454;--red:#ff6b6b;--info:#8ab4ff;--accent:var(--sig);--ease:cubic-bezier(.16,1,.3,1);--font:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;--disp:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,monospace}
@@ -56,6 +56,28 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 .scard{padding:20px}.scard h2{margin-bottom:10px}.srow{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--bd);font-size:.875rem}.srow:last-child{border:0}.srow span:last-child{color:var(--mut);text-align:right}
 .tbl{width:100%;border-collapse:collapse;font-size:.8125rem;margin-top:8px}.tbl th{text-align:left;color:var(--mut);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--bd)}.tbl td{padding:6px 8px;border-bottom:1px dashed var(--bd);word-break:break-all}
 .note{margin-top:22px;padding:14px 18px;border:1px solid var(--bd2);border-radius:16px;background:rgba(138,180,255,.07);color:var(--mut);font-size:.8125rem}
+.mdiag{position:relative;margin:22px auto 0;width:min(100%,calc(340px*var(--ar,1.78)));aspect-ratio:var(--ar,1.78);border:1px dashed var(--bd2);border-radius:20px;background:rgba(255,255,255,.02)}
+.mon{position:absolute;border:1.5px solid var(--bd2);border-radius:10px;background:linear-gradient(160deg,var(--s2),var(--s1));overflow:hidden;padding:6px;transition:border-color .15s,box-shadow .15s}
+.mon.pri{border-color:var(--accent)}.mon.over{box-shadow:0 0 0 3px var(--accent)}.mon.target{cursor:pointer;border-style:dashed}
+.mon .no{position:absolute;right:8px;bottom:2px;font:700 2.2rem/1 var(--disp);opacity:.25}.mon .mn{font-size:.6875rem;color:var(--mut);display:block;max-width:80%}
+.wchip{display:inline-block;margin:2px 3px 0 0;padding:2px 8px;border-radius:8px;border:1px solid var(--bd2);background:var(--s3);font-size:.6875rem;touch-action:none;cursor:grab}
+.wchip.parked{border-style:dashed;color:var(--amb);border-color:var(--amb)}.wchip.sel{outline:2px solid var(--accent)}.ghost{position:fixed;z-index:50;pointer-events:none;opacity:.9}
+.mcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:22px}.mcard{padding:18px}
+select{font:inherit;color:var(--tx);background:var(--s3);border:1px solid var(--bd2);border-radius:10px;padding:6px 10px;max-width:100%}
+.lbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:22px}
+.lbar input[type=search]{flex:1 1 240px;min-width:200px;font:inherit;color:var(--tx);background:var(--s2);border:1px solid var(--bd2);border-radius:12px;padding:10px 14px}
+.tabs{display:flex;gap:6px}.tabs button{border:1px solid var(--bd);background:var(--s1);border-radius:999px;padding:6px 14px;font-size:.8125rem;color:var(--mut)}.tabs button[aria-pressed=true]{background:var(--s3);color:var(--tx);border-color:var(--accent)}
+.lfolders{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.lf{display:flex;gap:8px;align-items:center;border:1px solid var(--bd);border-radius:12px;padding:6px 10px;background:var(--s1);font-size:.8125rem}.lf button{border:0;background:none;color:var(--mut);font-size:.75rem;text-decoration:underline;padding:0 2px}
+.lgrid{position:relative;margin-top:14px;height:min(58vh,560px);overflow:auto;border:1px solid var(--bd);border-radius:18px;background:rgba(255,255,255,.015)}
+.lcard{position:absolute;border-radius:14px;overflow:hidden;border:1px solid var(--bd);background:var(--s2);cursor:pointer}.lcard:hover{border-color:var(--bd2)}.lcard.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.lcard img{width:100%;height:calc(100% - 30px);object-fit:cover;display:block;background:var(--s3)}.lcard .nm{position:absolute;left:0;right:0;bottom:0;height:30px;padding:6px 10px;font-size:.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--s1)}
+.lcard .fav{position:absolute;top:6px;right:6px;border:0;border-radius:999px;width:28px;height:28px;background:rgba(10,12,16,.7);color:#fff;font-size:15px;line-height:1}.lcard .fav[aria-pressed=true]{color:#ffd166}
+.lcard .st{position:absolute;left:6px;top:6px}.lcard .ph{height:calc(100% - 30px);background:repeating-linear-gradient(135deg,var(--s3),var(--s3) 8px,var(--s2) 8px,var(--s2) 16px)}.lcard.bad img{filter:grayscale(1) opacity(.45)}.lcard.skel img{visibility:hidden}
+.ldetail{margin-top:14px;padding:18px;display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:18px}@media(max-width:900px){.ldetail{grid-template-columns:1fr}}
+.ldetail img{width:100%;border-radius:12px;background:var(--s3);aspect-ratio:16/9;object-fit:contain}
+.fld{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}.fld label{color:var(--mut);font-size:.8125rem;min-width:110px}
+input[type=color]{width:42px;height:32px;border:1px solid var(--bd2);border-radius:8px;background:var(--s3);padding:2px}
+input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px solid var(--bd2);border-radius:10px;padding:6px 10px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:var(--s3);border:1px solid var(--bd2);border-radius:16px;padding:12px 18px;transition:transform .3s var(--ease);z-index:9}.toast.on{transform:translate(-50%,0)}
 .modal{position:fixed;inset:0;background:rgba(5,6,9,.8);backdrop-filter:blur(10px);display:none;place-items:center;z-index:20;padding:20px}.modal.on{display:grid}.sheet{width:min(640px,100%);padding:32px}
 </style></head>
@@ -66,6 +88,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
 <button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
 <button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
+<button data-v="monitors"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="12" height="9" rx="2"/><rect x="16" y="9" width="6" height="9" rx="2"/><path d="M6 18h4"/></svg>Monitors</button>
 <button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
 <button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
 <div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
@@ -79,6 +102,16 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <div class="scenes" role="radiogroup" aria-label="Choose a scene" id="scenes"></div>
 <div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span> <span class="chip warn" id="pz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="sw" id="motion" role="switch" aria-checked="false" aria-label="Live motion wallpaper (uses more CPU)" title="Live motion wallpaper: uses noticeably more CPU and GPU; pauses in games"></button><span style="font-size:.8125rem;color:var(--mut)">Live motion</span><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
 
+<section class="view" id="v-monitors" aria-labelledby="hm"><div class="eb">Monitors</div><h1 id="hm">Every widget, exactly where you want it.</h1>
+<p class="lede">Your screens as Windows arranges them. Drag a widget onto a monitor, or click a widget and then a monitor. If a monitor is unplugged, its widgets wait on another screen and return by themselves.</p>
+<div class="row mt"><button class="btn" id="midentify">Identify monitors</button><span class="chip" id="mfake" hidden>Test monitors</span></div>
+<div class="mdiag" id="mdiag" role="group" aria-label="Monitor layout"></div>
+<div class="mcards" id="mcards"></div>
+<div class="grid"><div class="card" style="padding:20px"><h2>Widgets</h2><div id="mwidgets" class="mt" style="display:grid;gap:10px"></div></div>
+<div class="card" style="padding:20px"><h2>If a monitor is unplugged</h2><div class="pr"><div class="w"><b>Park widgets on</b><span>They return to their own monitor when it reconnects.</span></div><select id="mfallback" aria-label="Monitor for parked widgets"></select></div>
+<h2 style="margin-top:14px">Recovery</h2><div class="row mt" style="flex-wrap:wrap"><button class="btn" id="mparkall">Bring all widgets to the primary monitor</button><button class="btn g" id="mreset">Reset widget positions</button><button class="btn g" id="mundo" hidden>Undo reset</button></div>
+<p style="color:var(--mut);font-size:.8125rem;margin-top:10px">Bringing widgets to the primary monitor is temporary and never changes where you put them. Reset puts every widget back at its default place, and can be undone.</p></div></div></section>
+
 <section class="view" id="v-security" aria-labelledby="hs"><div class="eb">Security Center</div><h1 id="hs">See what your PC is doing.</h1>
 <p class="lede">A clear look at your protection, what is connected to the internet, what is listening for connections, and what starts with Windows. Plinth reports facts and leaves the judgement to you.</p>
 <div class="note"><b>This is visibility, not an antivirus.</b> Plinth does not scan files and cannot tell you a program is safe or malicious. A program appearing here is not a sign of a problem by itself.</div>
@@ -86,9 +119,16 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <div class="sgrid" id="sgrid"></div></section>
 
 <section class="view" id="v-wallpapers" aria-labelledby="hw"><div class="eb">Wallpapers</div><h1 id="hw">Motion that respects your PC.</h1>
-<p class="lede">Live wallpapers run in a locked box: they can draw, but they cannot reach the internet, your files or your widgets. They pause by themselves during games, on low battery and in remote sessions.</p>
-<div class="drop"><div><b>Add your own video</b><div style="color:var(--mut);font-size:.8125rem">Drag an .mp4, .webm or .m4v file onto this window. Plinth keeps its own copy; your original is never changed.</div></div><div class="row"><button class="btn g" id="wfolder">Open folder</button><button class="btn g" id="wscan">Rescan</button></div></div>
-<div class="wgrid" id="wgrid" role="radiogroup" aria-label="Choose a wallpaper"></div>
+<p class="lede">Pictures from your own folders, live video and animated pages, on exactly the monitors you choose. Live wallpapers run in a locked box: they can draw, but they cannot reach the internet, your files or your widgets. They pause by themselves during games, on low battery and in remote sessions.</p>
+<div class="lbar"><input id="lq" type="search" placeholder="Search by name or size (4k, 1080p)" aria-label="Search wallpapers"><div class="tabs" id="ltabs" role="group" aria-label="Show"><button data-f="all" aria-pressed="true">All</button><button data-f="favorites" aria-pressed="false">Favorites</button><button data-f="recent" aria-pressed="false">Recent</button><button data-f="problems" aria-pressed="false">Problems</button></div><span class="chip" id="lcount">…</span><button class="btn" id="ladd">Add folder…</button><button class="btn g" id="lscan">Rescan</button></div>
+<div class="lfolders" id="lfolders"></div>
+<div class="lgrid" id="lgrid" aria-label="Wallpaper library" tabindex="0"><div id="lspacer" style="width:1px"></div></div>
+<div class="card ldetail" id="ldetail" hidden></div>
+<h2 class="mt" style="margin-top:34px">Live wallpapers</h2>
+<div class="drop"><div><b>Add your own video</b><div style="color:var(--mut);font-size:.8125rem">Drag an .mp4, .webm or .m4v file onto this window. Plinth keeps its own copy; your original is never changed. Dropping a folder adds it to your library instead.</div></div><div class="row"><button class="btn g" id="wfolder">Open folder</button><button class="btn g" id="wscan">Rescan</button></div></div>
+<div class="wgrid" id="wgrid" role="radiogroup" aria-label="Choose a live wallpaper"></div>
+<div class="grid"><div class="card" style="padding:20px"><h2>Behind widgets</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A busy picture can make widget text hard to read. Shade it behind the widgets.</p><div class="fld"><label for="lscrim">Shading</label><select id="lscrim" aria-label="Shading behind widgets"><option value="none">None</option><option value="dim">Dim</option><option value="blur">Soften and dim</option></select></div></div>
+<div class="card" style="padding:20px"><h2>Profiles</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">Save wallpapers, widgets and monitor assignments together, and restore them in one click.</p><div class="fld"><input type="text" id="pname" maxlength="40" placeholder="Name, for example Work" aria-label="Profile name"><button class="btn" id="psave">Save profile</button></div><div id="plist" class="mt" style="display:grid;gap:8px"></div></div></div>
 <div class="bar"><div><b id="wn">None</b> <span class="chip" id="wcost">…</span> <span class="chip ok" id="wap" hidden>Applied</span> <span class="chip warn" id="wpz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="btn g" id="rev2" disabled>Revert</button><button class="btn p" id="apply2">Apply to my desktop</button></div></div></section>
 
 <section class="view" id="v-safety" aria-labelledby="h2"><div class="eb">Safety · Permission Center</div><h1 id="h2">See everything. Revoke anything.</h1>
@@ -113,7 +153,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v==null?'':v).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const send=(cmd,a={})=>window.ipc.postMessage(JSON.stringify({cmd,...a}));
-let S=null,open=new Set();const R={scene:null,w:null,wall:null};
+let S=null,open=new Set();const R={scene:null,w:null,wall:null,mon:null};
 const SC={dusk:{name:'Dusk',d:'Warm, calm, low glare',w:'linear-gradient(160deg,#2b1b4d 0%,#5b2a6b 40%,#d9667a 85%,#ffb27a 100%)',m:'radial-gradient(60% 50% at 70% 30%,rgba(255,170,120,.35),transparent 70%)',a:'#ffb27a',i:'#2a1400'},graphite:{name:'Graphite',d:'Matte, focused, no noise',w:'linear-gradient(160deg,#0d0f14 0%,#1a1e2b 55%,#2c3347 100%)',m:'radial-gradient(50% 60% at 25% 70%,rgba(124,242,200,.22),transparent 70%)',a:'#7cf2c8',i:'#04281d'},paper:{name:'Paper',d:'Light, airy, high legibility',w:'linear-gradient(160deg,#e9e4da 0%,#cfd8dc 60%,#b7c4d6 100%)',m:'radial-gradient(55% 55% at 75% 25%,rgba(255,255,255,.7),transparent 70%)',a:'#3b6cff',i:'#ffffff'}};
 function toast(t){$('#toast').textContent=t;$('#toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').classList.remove('on'),4500)}
 function show(v){$$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));$$('#nav button').forEach(b=>{b.dataset.v===v?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')})}
@@ -148,6 +188,8 @@ function render(){
     S.wallpapers.forEach(w=>add(w.id,w.name,(w.kind==='video'?'Video':'Animated page')+(w.bundled?' · Plinth':' · Yours'),w.kind==='video'?'v':'',icon[w.kind]||'',!w.bundled))}
   const cw=S.wallpapers.find(w=>w.id===S.wallpaper);
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
+  renderMon();
+  renderLibState();
   if(S.firstRun)$('#fr').classList.add('on');
 }
 let SEC=null;
@@ -173,6 +215,91 @@ function renderSec(){
 }
 window.__onSecurity=(d)=>{SEC=d;renderSec()};
 $('#sscan').onclick=()=>{$('#sscan').disabled=true;$('#sstat').textContent='Scanning…';send('security_scan')};
+let selW=null,drag=null;
+function sendAssign(w,m){send('assign',{widget:w,monitor:m});selW=null}
+function renderMon(){
+  const M=S.monitors||[];if(!M.length)return;
+  const key=JSON.stringify([S.monitors,S.placements,S.wallpapers,S.fallback,S.parkAll,S.canUndo,selW]);if(R.mon===key)return;R.mon=key;
+  $('#mfake').hidden=!S.fakeMonitors;
+  const minx=Math.min(...M.map(m=>m.x)),miny=Math.min(...M.map(m=>m.y)),maxx=Math.max(...M.map(m=>m.x+m.w)),maxy=Math.max(...M.map(m=>m.y+m.h)),W=maxx-minx,H=maxy-miny;
+  const box=$('#mdiag');box.style.setProperty('--ar',(W/H).toFixed(3));
+  const pct=(v,t)=>(100*v/t).toFixed(3)+'%';
+  box.innerHTML=M.map(m=>{const chips=(S.placements||[]).filter(p=>p.monitor===m.id).map(p=>`<span class="wchip ${p.parked?'parked':''} ${selW===p.widget?'sel':''}" data-w="${esc(p.widget)}" role="button" tabindex="0" aria-label="${esc(p.name)}${p.parked?' (parked, waiting for its monitor)':''}">${esc(p.name)}${p.parked?' ·parked':''}</span>`).join('');
+    return `<div class="mon ${m.primary?'pri':''} ${selW?'target':''}" data-id="${esc(m.id)}" style="left:${pct(m.x-minx,W)};top:${pct(m.y-miny,H)};width:${pct(m.w,W)};height:${pct(m.h,H)}"><span class="mn">${esc(m.name)}${m.primary?' ★':''}</span>${chips}<span class="no">${esc(m.n)}</span></div>`}).join('');
+  $('#mcards').innerHTML=M.map(m=>`<div class="card mcard"><div class="row between"><b>${esc(m.n)} · ${esc(m.name)}</b>${m.primary?'<span class="chip ok">Primary</span>':''}</div>
+    <div class="srow"><span>Resolution</span><span>${esc(m.w)} × ${esc(m.h)} (${m.portrait?'portrait':'landscape'})</span></div><div class="srow"><span>Scale</span><span>${esc(m.scale)}%</span></div><div class="srow"><span>Refresh rate</span><span>${m.hz?esc(m.hz)+' Hz':'unknown'}</span></div>
+    <div class="srow"><span>Wallpaper</span><span><select data-mw="${esc(m.id)}" aria-label="Wallpaper for monitor ${esc(m.n)}"><option value="">Scene background${m.primary?'':' (none)'}</option>${(S.wallpapers||[]).map(w=>`<option value="${esc(w.id)}" ${w.id===m.wallpaper?'selected':''}>${esc(w.name)}</option>`).join('')}</select></span></div></div>`).join('');
+  $$('#mcards select').forEach(el=>el.onchange=()=>send('monitor_wallpaper',{monitor:el.dataset.mw,id:el.value}));
+  $('#mwidgets').innerHTML=(S.placements||[]).map(p=>`<div class="row between"><div><b>${esc(p.name)}</b>${p.parked?' <span class="chip warn">parked: its monitor is not connected</span>':''}${p.clipped?' <span class="chip bad">too big for this monitor</span>':''}</div><select data-wm="${esc(p.widget)}" aria-label="Monitor for ${esc(p.name)}">${p.home==='primary'?`<option value="primary" selected>Primary monitor</option>`:''}${M.map(m=>`<option value="${esc(m.id)}" ${p.home===m.id?'selected':''}>${esc(m.n)} · ${esc(m.name)}</option>`).join('')}${!p.homeConnected&&p.home!=='primary'?`<option value="" selected disabled>Disconnected monitor</option>`:''}</select></div>`).join('');
+  $$('#mwidgets select').forEach(el=>el.onchange=()=>{if(el.value)sendAssign(el.dataset.wm,el.value)});
+  const fb=$('#mfallback');fb.innerHTML=`<option value="">Primary monitor</option>`+M.map(m=>`<option value="${esc(m.id)}" ${S.fallback===m.id?'selected':''}>${esc(m.n)} · ${esc(m.name)}</option>`).join('');fb.onchange=()=>send('fallback',{monitor:fb.value});
+  $('#mparkall').textContent=S.parkAll?'Return widgets to their monitors':'Bring all widgets to the primary monitor';$('#mundo').hidden=!S.canUndo;
+}
+$('#midentify').onclick=()=>send('identify');$('#mparkall').onclick=()=>send('park_all',{on:!S.parkAll});$('#mreset').onclick=()=>send('reset_positions');$('#mundo').onclick=()=>send('undo_positions');
+// Pointer-based drag (HTML5 drag and drop is disabled by the native file-drop handler). A press without movement selects the
+// widget; clicking a monitor then moves it there.
+const mdiag=$('#mdiag');
+mdiag.addEventListener('pointerdown',(e)=>{const c=e.target.closest('.wchip');if(!c)return;drag={w:c.dataset.w,x:e.clientX,y:e.clientY,moved:false,ghost:null};e.preventDefault()});
+document.addEventListener('pointermove',(e)=>{if(!drag)return;if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>5){drag.moved=true;const g=document.createElement('div');g.className='ghost wchip';g.textContent=(S.placements.find(p=>p.widget===drag.w)||{}).name||'';document.body.append(g);drag.ghost=g}
+  if(drag.ghost){drag.ghost.style.left=(e.clientX+8)+'px';drag.ghost.style.top=(e.clientY+8)+'px';const t=document.elementFromPoint(e.clientX,e.clientY);$$('.mon').forEach(m=>m.classList.toggle('over',!!t&&m===t.closest('.mon')))}});
+document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=null;if(d.ghost)d.ghost.remove();$$('.mon').forEach(m=>m.classList.remove('over'));
+  if(d.moved){const t=document.elementFromPoint(e.clientX,e.clientY),m=t&&t.closest('.mon');if(m)sendAssign(d.w,m.dataset.id)}else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
+mdiag.addEventListener('click',(e)=>{if(e.target.closest('.wchip'))return;const m=e.target.closest('.mon');if(m&&selW)sendAssign(selW,m.dataset.id)});
+mdiag.addEventListener('keydown',(e)=>{const c=e.target.closest('.wchip');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selW=selW===c.dataset.w?null:c.dataset.w;R.mon=null;renderMon()}});
+
+// ---------------- wallpaper library (virtualized grid, thumbnails from the thumbnail origin)
+const L={q:'',filter:'all',total:0,pages:new Map(),pend:new Set(),token:0,sel:null,cols:1,cw:200,rowH:190,gap:12,raf:0,rev:-1};const PAGE=60;
+const fitNames={fill:'Fill (crop to fit)',fit:'Fit (show everything)',stretch:'Stretch',tile:'Tile',span:'Span across all monitors',center:'Center'};
+function libAsk(pg){if(L.pend.has(pg))return;L.pend.add(pg);send('lib_query',{q:L.q,filter:L.filter,offset:pg,limit:PAGE,req:{id:L.token,pg}})}
+window.__onLibrary=(m)=>{const r=m.req;if(!r||r.id!==L.token)return;L.pend.delete(r.pg);L.total=m.page.total;L.pages.set(r.pg,m.page.items);$('#lcount').textContent=L.total+(L.total===1?' picture':' pictures');paintLib()};
+function libReset(keepScroll){L.token++;L.pages.clear();L.pend.clear();if(!keepScroll)$('#lgrid').scrollTop=0;libAsk(0);paintLib()}
+window.__libChanged=()=>libReset(true);
+function geom(){const g=$('#lgrid'),W=g.clientWidth-L.gap;L.cols=Math.max(1,Math.floor((W+L.gap)/(190+L.gap)));L.cw=Math.floor((W-L.gap*(L.cols-1))/L.cols);L.rowH=Math.round(L.cw*9/16)+30+L.gap;return g}
+function paintLib(){cancelAnimationFrame(L.raf);L.raf=requestAnimationFrame(()=>{const g=geom(),rows=Math.ceil(L.total/L.cols);$('#lspacer').style.height=(rows*L.rowH+L.gap)+'px';
+  const r0=Math.max(0,Math.floor(g.scrollTop/L.rowH)-1),r1=Math.min(rows,Math.ceil((g.scrollTop+g.clientHeight)/L.rowH)+1);let html='';
+  for(let r=r0;r<r1;r++)for(let c=0;c<L.cols;c++){const i=r*L.cols+c;if(i>=L.total)break;const pg=Math.floor(i/PAGE)*PAGE,page=L.pages.get(pg);if(!page)libAsk(pg);const it=page&&page[i-pg];
+    const st=`left:${L.gap+c*(L.cw+L.gap)}px;top:${L.gap+r*L.rowH}px;width:${L.cw}px;height:${L.rowH-L.gap}px`;
+    if(!it){html+=`<div class="lcard skel" style="${st}"><img alt=""><div class="nm">&nbsp;</div></div>`;continue}
+    html+=`<div class="lcard ${L.sel&&L.sel.key===it.key?'sel':''} ${it.ok?'':'bad'}" data-i="${i}" data-key="${esc(it.key)}" role="button" tabindex="0" aria-label="${esc(it.name)}, ${esc(it.w)} by ${esc(it.h)}${it.fav?', favorite':''}${it.ok?'':', '+esc(it.status)}" style="${st}">${it.ok?`<img alt="" decoding="async" loading="lazy" src="http://pwth.localhost/${esc(it.key)}.jpg">`:'<div class="ph"></div>'}<button class="fav" aria-pressed="${it.fav}" aria-label="${it.fav?'Remove from favorites':'Add to favorites'}: ${esc(it.name)}">${it.fav?'★':'☆'}</button>${it.ok?'':`<span class="chip warn st">${esc(it.status)}</span>`}<div class="nm" title="${esc(it.path)}">${esc(it.name)}</div></div>`}
+  g.querySelectorAll('.lcard').forEach(e=>e.remove());$('#lspacer').insertAdjacentHTML('afterend',html)})}
+$('#lgrid').addEventListener('scroll',paintLib);addEventListener('resize',paintLib);
+// The grid is laid out while its view is hidden; repaint whenever its size changes (including when the view is shown).
+if(window.ResizeObserver)new ResizeObserver(()=>{if($('#lgrid').clientWidth>0)paintLib()}).observe($('#lgrid'));
+$('#lgrid').addEventListener('click',(e)=>{const c=e.target.closest('.lcard');if(!c||c.classList.contains('skel'))return;const i=+c.dataset.i,pg=Math.floor(i/PAGE)*PAGE,it=(L.pages.get(pg)||[])[i-pg];if(!it)return;
+  if(e.target.closest('.fav')){it.fav=!it.fav;send('lib_fav',{key:it.key,on:it.fav});if(L.sel&&L.sel.key===it.key)L.sel=it;paintLib();if(L.filter==='favorites')setTimeout(()=>libReset(true),150);return}
+  L.sel=it;paintLib();renderDetail()});
+$('#lgrid').addEventListener('keydown',(e)=>{const c=e.target.closest('.lcard');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}});
+let lqT=0;$('#lq').addEventListener('input',()=>{clearTimeout(lqT);lqT=setTimeout(()=>{L.q=$('#lq').value;libReset(false)},200)});
+$$('#ltabs button').forEach(b=>b.onclick=()=>{L.filter=b.dataset.f;$$('#ltabs button').forEach(x=>x.setAttribute('aria-pressed',x===b));libReset(false)});
+$('#ladd').onclick=()=>send('lib_pick',{purpose:'folder'});$('#lscan').onclick=()=>send('lib_rescan');
+function folderName(p){return p.split(/[\\/]/).filter(Boolean).pop()||p}
+function renderFolders(){const roots=(S.lib&&S.lib.roots)||[];$('#lfolders').innerHTML=roots.map(r=>`<div class="lf" title="${esc(r.path)}"><b>${esc(r.bundled?'Plinth wallpapers':folderName(r.path))}</b><span style="color:var(--mut)">${esc(r.count)}</span>${r.online?'':'<span class="chip warn">offline</span>'}${r.bundled?'':`<button data-rm="${esc(r.path)}" aria-label="Remove folder ${esc(folderName(r.path))} from the library">Remove</button><button data-ex="${esc(r.path)}" aria-label="Skip a subfolder of ${esc(folderName(r.path))}">Skip a subfolder…</button>`}${(r.excludes||[]).map(x=>`<span class="chip">skipping ${esc(folderName(x))} <button data-unex="${esc(x)}" data-root="${esc(r.path)}" aria-label="Stop skipping ${esc(folderName(x))}">✕</button></span>`).join('')}</div>`).join('');
+  $$('#lfolders [data-rm]').forEach(b=>b.onclick=()=>{if(confirm('Remove this folder from the library? Your pictures are not deleted.'))send('lib_remove_folder',{path:b.dataset.rm})});
+  $$('#lfolders [data-ex]').forEach(b=>b.onclick=()=>send('lib_pick',{purpose:'exclude:'+b.dataset.ex}));
+  $$('#lfolders [data-unex]').forEach(b=>b.onclick=()=>send('lib_unexclude',{root:b.dataset.root,path:b.dataset.unex}))}
+function renderDetail(){const d=$('#ldetail'),it=L.sel;if(!it){d.hidden=true;return}d.hidden=false;const M=S.monitors||[];if(!L.mon||!M.some(m=>m.id===L.mon))L.mon=(M.find(m=>m.primary)||M[0]||{}).id;
+  const cur=(S.libSel||[]).find(x=>x.monitor===L.mon&&x.key===it.key),sel=(S.libSel||[]).find(x=>x.monitor===L.mon),sl=(S.slides||[]).find(x=>x.monitor===L.mon);
+  d.innerHTML=`<div><img alt="Preview of ${esc(it.name)}" src="http://pwth.localhost/${esc(it.key)}.jpg"></div><div><div class="row between"><div><b>${esc(it.name)}</b><div style="color:var(--mut);font-size:.8125rem">${esc(it.w)} × ${esc(it.h)}${it.ok?'':' · '+esc(it.status)}</div></div><button class="btn g" id="dfav" aria-pressed="${it.fav}">${it.fav?'★ Favorite':'☆ Favorite'}</button></div>
+  ${it.ok?`<div class="fld"><label for="dmon">Monitor</label><select id="dmon" aria-label="Monitor for this wallpaper">${M.map(m=>`<option value="${esc(m.id)}" ${m.id===L.mon?'selected':''}>${esc(m.n)} · ${esc(m.name)}${m.primary?' (primary)':''}</option>`).join('')}</select></div>
+  <div class="fld"><label for="dfit">Fit</label><select id="dfit" aria-label="Fit mode">${Object.entries(fitNames).map(([k,v])=>`<option value="${k}" ${(sel?sel.fit:'fill')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+  <div class="fld"><label for="dbg">Bars color</label><input type="color" id="dbg" aria-label="Color of the bars around the picture" value="${esc(sel?sel.bg:'#000000')}"></div>
+  <div class="row mt"><button class="btn p" id="dset">${cur?'Update this monitor':'Use on this monitor'}</button>${sel?'<button class="btn g" id="dclear">Stop using a picture here</button>':''}</div>
+  <div class="fld" style="margin-top:16px"><label>Slideshow</label><label style="min-width:0"><input type="checkbox" id="dsl" ${sl?'checked':''} aria-label="Slideshow on this monitor"> Change picture every</label><select id="dslm" aria-label="Minutes between pictures">${[5,15,30,60,180].map(m=>`<option value="${m}" ${(sl?sl.minutes:30)===m?'selected':''}>${m<60?m+' minutes':m/60+(m===60?' hour':' hours')}</option>`).join('')}</select><label style="min-width:0"><input type="checkbox" id="dslr" ${sl&&sl.shuffle?'checked':''}> Random</label><label style="min-width:0"><input type="checkbox" id="dslf" ${sl&&sl.filter==='favorites'?'checked':''}> Favorites only</label></div>
+  <p style="color:var(--mut);font-size:.75rem;margin-top:6px">Slideshows run while Plinth is running and pause in games and on battery saver.</p>`:`<div class="row mt"><button class="btn" id="dloc">Locate…</button><button class="btn g" id="drem">Remove from library</button></div><p style="color:var(--mut);font-size:.8125rem;margin-top:8px">Plinth cannot read this picture. Locate it if it moved; removing only forgets it, your file is not deleted.</p>`}</div>`;
+  $('#dfav').onclick=()=>{it.fav=!it.fav;send('lib_fav',{key:it.key,on:it.fav});renderDetail();paintLib()};
+  if(it.ok){$('#dmon').onchange=(e)=>{L.mon=e.target.value;renderDetail()};
+    $('#dset').onclick=()=>send('set_static',{monitor:$('#dmon').value,key:it.key,fit:$('#dfit').value,bg:$('#dbg').value});
+    if($('#dclear'))$('#dclear').onclick=()=>send('clear_static',{monitor:$('#dmon').value});
+    const slide=()=>send('slideshow',{monitor:$('#dmon').value,on:$('#dsl').checked,minutes:+$('#dslm').value,shuffle:$('#dslr').checked,filter:$('#dslf').checked?'favorites':'all'});
+    ['dsl','dslm','dslr','dslf'].forEach(id=>$('#'+id).onchange=slide)}
+  else{$('#dloc').onclick=()=>send('lib_pick',{purpose:'locate:'+it.key});$('#drem').onclick=()=>{if(confirm('Remove this picture from the library? The file is not deleted.')){send('lib_remove_item',{key:it.key});L.sel=null;renderDetail()}}}}
+function renderLibState(){if(!S.lib)return;renderFolders();if(L.rev!==S.lib.revision){L.rev=S.lib.revision;if(L.token===0)libReset(false);else libReset(true)}
+  $('#lscrim').value=S.scrim||'none';
+  const ps=S.profiles||[],key=JSON.stringify(ps);if(L.pk!==key){L.pk=key;$('#plist').innerHTML=ps.map(n=>`<div class="row between"><b>${esc(n)}</b><span class="row"><button class="btn g" data-pa="${esc(n)}" aria-label="Apply profile ${esc(n)}">Apply</button><button class="btn g" data-pd="${esc(n)}" aria-label="Delete profile ${esc(n)}">Delete</button></span></div>`).join('')||'<span style="color:var(--mut);font-size:.8125rem">No profiles yet.</span>';
+    $$('#plist [data-pa]').forEach(b=>b.onclick=()=>send('profile_apply',{name:b.dataset.pa}));$$('#plist [data-pd]').forEach(b=>b.onclick=()=>{if(confirm('Delete profile '+b.dataset.pd+'?'))send('profile_delete',{name:b.dataset.pd})})}
+  if(L.sel&&(S.libSel||[]).length!==L.nsel){L.nsel=(S.libSel||[]).length;renderDetail()}}
+$('#lscrim').onchange=(e)=>send('scrim',{mode:e.target.value});$('#psave').onclick=()=>{send('profile_save',{name:$('#pname').value});$('#pname').value=''};
+
 window.__drop=(on)=>document.body.classList.toggle('dropping',!!on);
 window.__onState=(s)=>{const prev=S;S=s;render();if(prev&&s.msg)toast(s.msg)};
 setInterval(()=>{const d=new Date();$('#pt').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},5000);

@@ -1,6 +1,11 @@
 # Progress log (update at the end of every work session)
 
-## State as of 2026-10-30 (v0.9.0)
+## State as of 2026-10-30 (v0.10.0)
+- v0.10.0: monitors (per-monitor layers, assignment, reconcile, parking, recovery) and the picture wallpaper library (folders, scan, thumbnails, dedupe, fit, slideshow, OS wallpaper per monitor, Revert, profiles, shading). This PC has TWO monitors (primary 1920x1080 and a 1280x400 case screen); real tests used both.
+- Tests: 80 core, 14 app, 24 host, 8 proxy; autotest 20/20; fake-monitor lifecycle 13/13; library end to end 10/10; click test 50 checks. Run everything: `scripts/verify.ps1 -App -Monitors -Library -Click`.
+- Open: same widget on several monitors (multi-instance), right-click Move to monitor, hot-plug on real docks, mixed DPI, virtual desktops, the intermittent click-test failure (second launch not bringing the hub back; seen again 2 of 9 runs today), name clearance, installer, store.
+
+## Earlier state (v0.9.0)
 - v0.9.0: Security Center (read-only visibility; D30) and the wallpaper/monitor addendum design (D24-D29). Next: v0.10.0 monitors + static wallpaper library (F19, F20).
 
 ## Earlier state (v0.8.0)
@@ -13,7 +18,7 @@
 - Tests: 27 core, 13 host, 8 proxy.
 
 ## Next (in order)
-0. v0.8.0 shipped wallpapers. Owner asked for the Security Center first: v0.9.0 = Security Center; then v0.10.0 = monitors + static wallpaper library (F19, F20; design done, see PRD 5.4), then Moods/Setup Cards import-export. Hardening before store: signature- or location-based trust instead of the `com.plinth.` id prefix.
+0. v0.10.0 shipped monitors and the picture library. Next: Moods + Setup Cards import/export + Builds showcase (v0.11.0), multi-instance widgets, then name clearance, signed installer, store, then Moods/Setup Cards import-export. Hardening before store: signature- or location-based trust instead of the `com.plinth.` id prefix.
 1. Done in v0.6.0: hub click test via UI Automation; tray/background mode. Remaining: tray menu click test, autostart option.
 2. Close known gaps: HTTPS allow path test (local TLS server), per-widget proxy attribution, wss, lock/sleep/display/DPI, multi-monitor.
 3. Moods in the app (foreground app, fullscreen, battery probes), Setup Card import/export and 60-second try-out.

@@ -51,6 +51,12 @@ const WS_CHILD: isize = 0x4000_0000;
 const WS_VISIBLE: isize = 0x1000_0000;
 const SWP_NOACTIVATE: u32 = 0x10;
 const SWP_SHOWWINDOW: u32 = 0x40;
+const SWP_FRAMECHANGED: u32 = 0x20;
+const GWL_EXSTYLE: i32 = -20;
+const WS_CLIPSIBLINGS: isize = 0x0400_0000;
+const WS_CLIPCHILDREN: isize = 0x0200_0000;
+/// WS_EX_DLGMODALFRAME | WINDOWEDGE | CLIENTEDGE | STATICEDGE | APPWINDOW
+const WS_EX_FRAME_BITS: isize = 0x0000_0001 | 0x0000_0100 | 0x0000_0200 | 0x0002_0000 | 0x0004_0000;
 
 /// Re-parents `hwnd` under the desktop (Progman), behind the icons, covering `(x, y, width, height)` in screen pixels.
 /// Returns false if the desktop windows could not be found (caller falls back to a normal window).
@@ -63,12 +69,17 @@ pub fn attach_to_desktop(hwnd: isize, x: i32, y: i32, width: i32, height: i32) -
         let mut res = 0usize;
         SendMessageTimeoutW(progman, 0x052C, 0xD, 1, 0, 1000, &mut res);
         let defview = FindWindowExW(progman, 0, w("SHELLDLL_DefView").as_ptr(), null());
-        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-        SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !WS_POPUP) | WS_CHILD | WS_VISIBLE);
+        // A plain child window with no frame at all. Keeping the original style bits left a caption/border behind (found on
+        // 2026-10-30 by reading the real window rectangles: the client area was 1904x1071 on a 1920x1080 screen), which
+        // inset the whole layer by about 8 px.
+        let _ = WS_POPUP;
+        SetWindowLongPtrW(hwnd, GWL_STYLE, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN);
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex & !WS_EX_FRAME_BITS);
         SetParent(hwnd, progman);
         let mut p = [x, y];
         ScreenToClient(progman, &mut p);
-        SetWindowPos(hwnd, defview, p[0], p[1], width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW) != 0
+        SetWindowPos(hwnd, defview, p[0], p[1], width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED) != 0
     }
 }
 

@@ -9,9 +9,14 @@ $state = Join-Path $env:TEMP "plinth-click-state.json"; $log = Join-Path $env:TE
 Remove-Item $state, $log -ErrorAction SilentlyContinue
 $env:PLINTH_STATE = $state
 $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-click-walls"; Remove-Item $env:PLINTH_USER_WALLPAPERS -Recurse -Force -ErrorAction SilentlyContinue
+# A small picture library of its own (never the user's real one): 12 generated pictures in a folder the library already knows.
+$fix = Join-Path $env:TEMP "plinth-click-lib"; python "$PSScriptRoot\make-library-fixture.py" $fix 12 | Out-Null
+$libDir = Join-Path $env:TEMP "plinth-click-libdata"; Remove-Item $libDir -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory $libDir | Out-Null
+$env:PLINTH_LIBRARY = Join-Path $libDir "library.json"
+[System.IO.File]::WriteAllText($env:PLINTH_LIBRARY, (@{ version = 1; roots = @(@{ path = $fix; excludes = @() }); items = @() } | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 $p = Start-Process -FilePath $exe -RedirectStandardOutput $log -PassThru -WindowStyle Hidden
 $results = @()
-function Check($name, [bool]$ok) { $script:results += [pscustomobject]@{ Name = $name; Ok = $ok }; "{0} {1}" -f $(if ($ok) { "[PASS]" } else { "[FAIL]" }), $name }
+function Check($name, [bool]$ok) { $script:results += [pscustomobject]@{ Name = $name; Ok = $ok }; "{0} {1}" -f $(if ($ok) { "[PASS]" } else { "[FAIL]" }), $name; if (-not $ok) { $st = St; "   at {0}: state scene={1} applied={2} stateFileExists={3}" -f (Get-Date -Format HH:mm:ss.fff), $(if ($st) { $st.scene } else { "?" }), $(if ($st) { $st.applied } else { "?" }), (Test-Path $state) } }
 function St { if (Test-Path $state) { Get-Content $state -Raw | ConvertFrom-Json } else { $null } }
 function Wait-Until([scriptblock]$cond, [int]$secs = 8) { $end = (Get-Date).AddSeconds($secs); while ((Get-Date) -lt $end) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 300 }; return $false }
 try {
@@ -57,6 +62,30 @@ try {
   Check "a scan completes and shows the Windows protection card" (Wait-Until { [bool](Find-ByName $w "Windows protection") } 25)
   Check "the scan reports its duration" (Wait-Until { $e = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -like "Scanned in *" } | Select-Object -First 1; [bool]$e } 8)
   Check "the connections table lists programs" (Wait-Until { [bool](Find-ByName $w "Connected to the internet right now") } 6)
+  # --- picture library ---
+  Invoke-ByName $w "Wallpapers" | Out-Null
+  Check "the library shows pictures from the bundled set and the test folder" (Wait-Until { $e = Find-Like $w "* pictures"; $e -and ([int](($e.Current.Name -split " ")[0]) -ge 20) } 25)
+  Check "folders are listed with a way to remove them" (Wait-Until { [bool](Find-Like $w "Remove folder *") } 6)
+  Check "a corrupt file shows as unreadable, not as a crash" (Wait-Until { [bool](Find-Like $w "broken.jpg*cannot be read*") } 6)
+  Set-Text $w "Search wallpapers" "pic_00001" | Out-Null
+  Check "searching narrows the grid to the one matching picture" (Wait-Until { [bool](Find-ByName $w "1 picture") } 8)
+  $card = $null; Wait-Until { $script:card = Find-Like $w "pic_00001*by*"; [bool]$script:card } 6 | Out-Null
+  Check "the matching picture card is there with its size in its name" ([bool]$card)
+  Check "choosing a picture opens its settings" (Wait-Until { if (-not (Find-ByName $w "Use on this monitor")) { $c = Find-Like $w "pic_00001*by*"; Invoke-Element $c | Out-Null; Start-Sleep -Milliseconds 400 }; [bool](Find-ByName $w "Use on this monitor") } 12)
+  # The click test never changes the real wallpaper (an aborted run would leave it changed); verify.ps1 -Library covers that end to end.
+  Invoke-ByName $w "Add to favorites: pic_00001.jpg" | Out-Null
+  Invoke-ByName $w "Favorites" | Out-Null
+  Check "a favorite shows under Favorites" (Wait-Until { [bool](Find-ByName $w "1 picture") } 8)
+  Invoke-ByName $w "All" | Out-Null
+  Set-Text $w "Search wallpapers" "" | Out-Null
+  Set-Text $w "Profile name" "Click test" | Out-Null
+  Invoke-ByName $w "Save profile" | Out-Null
+  Check "a profile saves wallpapers, widgets and monitors together" (Wait-Until { $s = St; $s -and $s.profiles -and $s.profiles.'Click test' } 8)
+  Invoke-ByName $w "Monitors" | Out-Null
+  Start-Sleep -Milliseconds 600
+  Check "Monitors view lists the real monitors with their numbers" (Wait-Until { [bool](Find-Like $w ("1 " + [char]0x00B7 + " *")) } 8)
+  Invoke-ByName $w "Identify monitors" | Out-Null
+  Check "Identify monitors was handled" (Wait-Until { Select-String -Path $log -Pattern "hub: identify handled" -Quiet } 8)
   # --- wallpapers ---
   Invoke-ByName $w "Wallpapers" | Out-Null
   Start-Sleep -Milliseconds 600

@@ -30,6 +30,12 @@ INFERENCE: the gap is real but narrow and specific. It is not "nobody has per-mo
 ## 3. Decisions this research drives
 D24 to D27 in `design/decisions.md`: static images set through `IDesktopWallpaper` and also drawn in the layer where widgets need glass; monitor identity by device path plus EDID fingerprint; placement stored per monitor in device-independent units with a pure reconcile function; one layer window per monitor that needs one, cost to be measured before promising.
 
+## 4a. Results from the build (2026-10-30, this PC: two monitors, 1920x1080 primary and a 1280x400 case screen at -1280,679)
+1. RESOLVED (FACT for this PC): `GetMonitorDevicePathAt` ids are identical to the DisplayConfig `monitorDevicePath` strings for both monitors (unit test).
+2. WebP through the OS: not needed; Plinth decodes and composes, so WebP works (unit tests cover JPEG, PNG; WebP decode is enabled in the `image` crate).
+6. MEASURED: a second layer window costs +41 MB and one process (264.7 to 305.7 MB), idle CPU unchanged.
+Also found: the layer was inset 8 px on every side because of tao's undecorated-shadow border; fixed.
+
 ## 4. Still to verify before or during the build (do not skip)
 1. That `GetMonitorDevicePathAt` ids equal the `monitorDevicePath` strings from `DisplayConfigGetDeviceInfo` (needed to join the two worlds). NOT TESTED.
 2. Whether `SetWallpaper` accepts WebP; if not Plinth writes a cached JPEG/PNG. NOT TESTED.

@@ -14,7 +14,7 @@ Question: can Plinth become the all-in-one app custom-PC owners want (live motio
 4. **Wallpaper tools do not monitor or protect**: Wallpaper Engine users report battery drain and frame drops with heavy items (consumer-demand.md, D4) and the Workshop had to close its "Applications" section after a malware problem (single weak source). Live wallpapers, monitoring and security are three separate apps today. INFERENCE: one safe runtime for all three is the opening.
 5. **Text-config dashboards** (Rainmeter + sensor plugins, AIDA64 SensorPanel) are powerful but hard to set up (competitor-analysis.md).
 
-## What a user-mode approach can and cannot read (OBSERVED on this PC: i7-14700F, RTX 5060, one monitor)
+## What a user-mode approach can and cannot read (OBSERVED on this PC: i7-14700F, RTX 5060, two monitors: a 1920x1080 primary and a 1280x400 case screen)
 - Available without any driver of ours: CPU utilization (GetSystemTimes), RAM, GPU Engine and GPU memory counters (PDH), Network Interface and PhysicalDisk counters (PDH), NVIDIA GPU temperature/fan/power/clocks/VRAM through NVML (`nvml.dll`, found in System32, ships with the NVIDIA driver).
 - NOT available: CPU package temperature and fan RPM. `\Thermal Zone Information(*)\Temperature` failed with error 0x800007D1 and `MSAcpi_ThermalZoneTemperature` reported "Not supported". CPU temperature needs low-level access (MSR/SMBus) via a driver or a vendor tool. INFERENCE: no honest user-mode path to CPU temperature exists on this machine, so Plinth must say so and offer optional bridges instead of shipping its own driver.
 
