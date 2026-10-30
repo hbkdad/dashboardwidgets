@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-30
+Ready to hand to someone else.
+### Added
+- `scripts/package.ps1`: builds the release and packs a self-contained folder and zip (3.1 MB: exe, widgets, wallpapers, the 12 bundled pictures, licence, readme). Verified by unzipping elsewhere and running the autotest from the copy with no development paths (20 of 20). The zip is not code-signed and is not published anywhere.
+- Settings page: "Start with Windows" (a per-user startup entry that launches `plinth-app.exe --background`: tray only, no window), and an About box with the version. A second launch opens the hub.
+- `scripts/backgroundtest.ps1` (3 checks) and Settings checks in the click test (54 of 54); the click test uses a test-only startup entry and leaves nothing behind.
+
 ## [0.11.0] - 2026-10-30
 Moods and setup cards.
 ### Added

@@ -257,3 +257,72 @@ pub fn foreground_app() -> String {
         path.rsplit(['\\', '/']).next().unwrap_or("").to_ascii_lowercase()
     }
 }
+
+#[link(name = "advapi32")]
+extern "system" {
+    fn RegOpenKeyExW(hkey: isize, sub: *const u16, opts: u32, sam: u32, out: *mut isize) -> i32;
+    fn RegSetValueExW(hkey: isize, name: *const u16, reserved: u32, ty: u32, data: *const u8, len: u32) -> i32;
+    fn RegQueryValueExW(hkey: isize, name: *const u16, reserved: *mut u32, ty: *mut u32, data: *mut u8, len: *mut u32) -> i32;
+    fn RegDeleteValueW(hkey: isize, name: *const u16) -> i32;
+    fn RegCloseKey(hkey: isize) -> i32;
+}
+
+const HKCU: isize = 0x8000_0001u32 as isize;
+const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Name of Plinth's startup entry. Tests (PLINTH_STATE set) use their own name so they never touch the real one.
+pub fn autostart_name() -> String {
+    match std::env::var("PLINTH_STATE") {
+        Ok(s) if !s.is_empty() => format!("Plinth-test-{}", s.chars().filter(|c| c.is_ascii_alphanumeric()).rev().take(16).collect::<String>()),
+        _ => "Plinth".to_string(),
+    }
+}
+
+fn open_run(sam: u32) -> Option<isize> {
+    let mut h = 0isize;
+    (unsafe { RegOpenKeyExW(HKCU, w(RUN_KEY).as_ptr(), 0, sam, &mut h) } == 0).then_some(h)
+}
+
+/// Is Plinth set to start with Windows (for this user)?
+pub fn autostart_enabled() -> bool {
+    let Some(h) = open_run(0x1) else { return false }; // KEY_QUERY_VALUE
+    let mut len = 0u32;
+    let ok = unsafe { RegQueryValueExW(h, w(&autostart_name()).as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), &mut len) } == 0;
+    unsafe { RegCloseKey(h) };
+    ok
+}
+
+/// Turn "start with Windows" on or off. The entry runs this exe with --background (tray only, no window).
+pub fn set_autostart(on: bool) -> bool {
+    let Some(h) = open_run(0x2) else { return false }; // KEY_SET_VALUE
+    let name = w(&autostart_name());
+    let ok = unsafe {
+        if on {
+            let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+            let cmd: Vec<u16> = w(&format!("\"{exe}\" --background"));
+            RegSetValueExW(h, name.as_ptr(), 0, 1, cmd.as_ptr() as *const u8, (cmd.len() * 2) as u32) == 0
+        } else {
+            let r = RegDeleteValueW(h, name.as_ptr());
+            r == 0 || r == 2 // 2 = the value was not there
+        }
+    };
+    unsafe { RegCloseKey(h) };
+    ok
+}
+
+#[cfg(test)]
+mod autostart_tests {
+    use super::*;
+
+    #[test]
+    fn autostart_can_be_set_read_and_removed_under_a_test_name() {
+        std::env::set_var("PLINTH_STATE", "plinth-unit-autostart-test");
+        assert!(!autostart_enabled());
+        assert!(set_autostart(true));
+        assert!(autostart_enabled());
+        assert!(set_autostart(false));
+        assert!(!autostart_enabled());
+        assert!(set_autostart(false), "removing twice is fine");
+        assert_ne!(autostart_name(), "Plinth");
+    }
+}

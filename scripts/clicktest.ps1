@@ -101,6 +101,14 @@ try {
   Check "adding a rule through the form saved it" (Wait-Until { $s = St; $s -and @($s.mood_rules).Count -eq 1 } 8)
   Check "the rule is listed in plain language" (Wait-Until { [bool](Find-Like $w "when I am using code.exe*") } 6)
   Check "Export setup card is available" ([bool](Find-ByName $w "Export setup card"))
+  # --- settings: start with Windows (uses a test-only startup entry, removed again) ---
+  function Run-Entry { $k = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -ErrorAction SilentlyContinue; if ($k) { @($k.PSObject.Properties | Where-Object { $_.Name -like "Plinth-test-*" }) } else { @() } }
+  Invoke-ByName $w "Settings" | Out-Null
+  Start-Sleep -Milliseconds 500
+  Invoke-ByName $w "Start Plinth with Windows" | Out-Null
+  Check "turning on Start with Windows wrote a startup entry that launches Plinth quietly" (Wait-Until { $e = Run-Entry; $e.Count -ge 1 -and ($e[0].Value -like "*--background*") } 8)
+  Invoke-ByName $w "Start Plinth with Windows" | Out-Null
+  Check "turning it off removed the startup entry" (Wait-Until { (Run-Entry).Count -eq 0 } 8)
   # --- wallpapers ---
   Invoke-ByName $w "Wallpapers" | Out-Null
   Start-Sleep -Milliseconds 600

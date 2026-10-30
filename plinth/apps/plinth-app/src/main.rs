@@ -245,7 +245,7 @@ impl App {
             }
             json!({ "name": c.name, "author": c.author, "scene": c.scene, "widgets": c.widgets.len(), "monitors": c.widgets.iter().map(|p| p.monitor).max().map_or(1, |m| m as usize + 1), "missing": missing, "permissions": perms, "hosts": hosts, "haveMonitors": self.monitors.len() })
         });
-        json!({ "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
     }
@@ -789,10 +789,15 @@ fn main() {
         (l.items.len(), l.roots.len())
     };
     println!("library: {n_items} items, {n_roots} folders");
-    let hub_window = WindowBuilder::new().with_title("Plinth").with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0)).build(&event_loop).unwrap();
+    // Started by Windows at sign-in (--background): live in the tray, no window until asked.
+    let background = std::env::args().any(|a| a == "--background");
+    let hub_window = WindowBuilder::new().with_title("Plinth").with_visible(!background).with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0)).build(&event_loop).unwrap();
     let hub_id = hub_window.id();
     let mut hub_ctx = WebContext::new(Some(state::webview_dir().join("wv-hub")));
-    let mut hub_view: Option<WebView> = Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx));
+    let mut hub_view: Option<WebView> = if background { None } else { Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx)) };
+    if background {
+        HUB_HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     // Tray icon + menu (background mode: closing the hub hides it; Quit in the tray exits).
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     let menu = Menu::new();
@@ -1483,6 +1488,10 @@ fn main() {
                             relayout = true;
                             msg = Some(format!("Applied \"{}\": {applied} widget(s) placed. Nothing was granted; check Safety for permissions. Undo is in Monitors.", card.name));
                         }
+                    }
+                    "autostart" => {
+                        let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+                        msg = Some(if win::set_autostart(on) { if on { "Plinth will start quietly in the tray when you sign in.".into() } else { "Plinth will no longer start with Windows.".into() } } else { "Windows did not allow that change.".into() });
                     }
                     "assign" => {
                         // Move a widget to a monitor. Anchor, offsets and size are kept, so it lands in the same place relative to the
