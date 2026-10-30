@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+Real-window click testing, background mode and single instance.
+### Added
+- `scripts/uia.ps1`, `scripts/clicktest.ps1`: click-through of the real hub window via Windows UI Automation (28 checks, 4 of 4 final runs); `verify.ps1 -Click`.
+- Tray icon (Open, Toggle Safe mode, Quit), background mode (closing the hub hides it, layer keeps running), single instance (second launch restores the hub).
+### Fixed
+- "Applied" chip was visible before any scene was applied (CSS `display` overrode `hidden`).
+- Hub rebuilt its widget/scene lists every 4 s, swallowing clicks and dropping keyboard focus; regions now re-render only when their data changes.
+### Not tested
+- Tray menu items, human use, screen reader, high-contrast mode, autostart (not built).
+
 ## [0.5.0] - 2026-10-30
 First runnable app.
 ### Added
