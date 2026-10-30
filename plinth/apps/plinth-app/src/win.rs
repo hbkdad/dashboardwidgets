@@ -326,3 +326,43 @@ mod autostart_tests {
         assert_ne!(autostart_name(), "Plinth");
     }
 }
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn CreateFileW(name: *const u16, access: u32, share: u32, sec: *const c_void, disp: u32, flags: u32, tmpl: isize) -> isize;
+    fn SetStdHandle(id: u32, h: isize) -> i32;
+    fn GetStdHandle(id: u32) -> isize;
+}
+#[link(name = "ntdll")]
+extern "system" {
+    fn RtlGetVersion(info: *mut [u32; 69]) -> i32;
+}
+
+/// True when something (a pipe, a file, a console) is attached to standard output, as in tests and when started from a terminal.
+pub fn stdout_attached() -> bool {
+    let h = unsafe { GetStdHandle(-11i32 as u32) };
+    h != 0 && h != -1
+}
+
+/// Send everything the app prints (standard output and error) to an append-only log file.
+pub fn redirect_stdio(path: &std::path::Path) -> bool {
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    unsafe {
+        // FILE_APPEND_DATA, share read and write, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL
+        let h = CreateFileW(w(&path.to_string_lossy()).as_ptr(), 0x4, 3, null(), 4, 0x80, 0);
+        if h == -1 || h == 0 {
+            return false;
+        }
+        SetStdHandle(-11i32 as u32, h) != 0 && SetStdHandle(-12i32 as u32, h) != 0
+    }
+}
+
+/// Windows version as major.minor.build.
+pub fn os_build() -> String {
+    let mut i = [0u32; 69];
+    i[0] = 276;
+    unsafe { RtlGetVersion(&mut i) };
+    format!("{}.{}.{}", i[1], i[2], i[3])
+}

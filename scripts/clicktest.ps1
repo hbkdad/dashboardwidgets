@@ -109,6 +109,8 @@ try {
   Check "turning on Start with Windows wrote a startup entry that launches Plinth quietly" (Wait-Until { $e = Run-Entry; $e.Count -ge 1 -and ($e[0].Value -like "*--background*") } 8)
   Invoke-ByName $w "Start Plinth with Windows" | Out-Null
   Check "turning it off removed the startup entry" (Wait-Until { (Run-Entry).Count -eq 0 } 8)
+  Invoke-ByName $w "Show diagnostics" | Out-Null
+  Check "the diagnostics report is shown, holds the version and counts, and never your user name" (Wait-Until { $e = Find-ByName $w "Diagnostics report"; if (-not $e) { $false } else { try { $v = $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value; ($v -like "Plinth diagnostics*") -and ($v -like "*monitors*") -and (-not $v.ToLower().Contains($env:USERNAME.ToLower())) -and (-not $v.Contains("DISPLAY#")) } catch { $false } } } 10)
   # --- wallpapers ---
   Invoke-ByName $w "Wallpapers" | Out-Null
   Start-Sleep -Milliseconds 600

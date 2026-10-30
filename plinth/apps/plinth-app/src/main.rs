@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // no console window when started from Explorer or at sign-in
+
 //! Plinth app (v0.5): hub window + desktop layer with isolated widgets, permission broker, and a deny-by-default
 //! network proxy that all widget traffic is forced through.
 //!
@@ -9,6 +11,7 @@
 //! Dev switches: PLINTH_NO_ATTACH=1 (use a normal window instead of the desktop layer), PLINTH_STATE=<file>,
 //! PLINTH_AUTOTEST=<seconds> (apply, exercise, verify, print a report, exit with 0/1).
 
+mod diag;
 mod hw;
 mod library;
 mod mon;
@@ -695,6 +698,16 @@ fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>, 
 }
 
 fn main() {
+    // Started by Explorer or Windows (no console, no redirected output): keep a small rotating log file instead, and record panics in it.
+    if std::env::var_os("PLINTH_NO_LOG").is_none() && !win::stdout_attached() {
+        let lp = diag::log_path();
+        diag::rotate(&lp);
+        win::redirect_stdio(&lp);
+        println!("---- Plinth {} starting ({}) ----", env!("CARGO_PKG_VERSION"), win::os_build());
+    }
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("PANIC: {info}");
+    }));
     let instance = format!("Local\\PlinthApp-{}", std::env::var("PLINTH_STATE").unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>());
     if !win::first_instance(&instance) {
         println!("Plinth is already running; bringing its window to the front.");
@@ -1512,6 +1525,35 @@ fn main() {
                     "autostart" => {
                         let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
                         msg = Some(if win::set_autostart(on) { if on { "Plinth will start quietly in the tray when you sign in.".into() } else { "Plinth will no longer start with Windows.".into() } } else { "Windows did not allow that change.".into() });
+                    }
+                    "diag" => {
+                        let user = std::env::var("USERNAME").unwrap_or_default();
+                        let (items, problems) = {
+                            let l = app.lib.lock().unwrap();
+                            let sm = l.summary();
+                            (sm["count"].as_u64().unwrap_or(0), sm["problems"].as_u64().unwrap_or(0))
+                        };
+                        let n_widgets = app.host.lock().unwrap().describe().len();
+                        let facts = diag::Facts {
+                            version: env!("CARGO_PKG_VERSION").to_string(),
+                            os_build: win::os_build(),
+                            monitors: app.monitors.iter().map(|m| (m.width_px, m.height_px, m.scale_percent(), m.primary)).collect(),
+                            widgets: n_widgets,
+                            copies: app.st.placements.iter().filter(|p| p.widget.contains('#')).count(),
+                            applied: app.st.applied,
+                            safe: app.st.safe,
+                            library_items: items,
+                            library_problems: problems,
+                            wallpapers_found: app.walls.lock().unwrap().list().len(),
+                            moods_on: app.st.moods_on,
+                            rules: app.st.mood_rules.len(),
+                            autostart: win::autostart_enabled(),
+                            layers: layers.len(),
+                        };
+                        let text = diag::report(&facts, &diag::log_tail(&diag::log_path(), 60, &user), &user);
+                        if let Some(view) = &hub_view {
+                            let _ = view.evaluate_script(&format!("__onDiag({})", Value::String(text)));
+                        }
                     }
                     "assign" => {
                         // Move a widget to a monitor. Anchor, offsets and size are kept, so it lands in the same place relative to the

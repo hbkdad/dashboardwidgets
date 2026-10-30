@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-30
+### Fixed
+- **A black console window opened whenever the app was started from Explorer or at sign-in.** The release build is now a Windows (GUI) program; `scripts/logtest.ps1` checks that no console host is started.
+### Added
+- A rotating log file (`%LOCALAPPDATA%\Plinth\plinth.log`, 1 MB, then `.old`) records what the app does when nothing is attached to its output, including panics.
+- Settings, "Troubleshooting": a diagnostics report to read and copy. It lists counts and sizes only (version, Windows build, monitor sizes and scale, widget and picture counts, the last 60 log lines); the user name is replaced everywhere and no monitor names, ids or file names are included. Unit tests and a click-test check cover it.
+### Changed
+- `verify.ps1` starts the app and waits for it (PowerShell does not wait for a GUI program with `&`); every stage now prints its output and uses the real exit code. Before this fix the stages would have reported success without running the test.
+
 ## [0.13.0] - 2026-10-30
 ### Added
 - Live Graphs widget (`com.plinth.graphs`): CPU, GPU, memory and network history over about a minute and a half, four small charts that suit a case screen. Verified on the real 1280x400 case screen (the layout also keeps clear of its taskbar). New first-party widgets added by an update are granted the permissions they declare, like at first run; third-party widgets never are.
