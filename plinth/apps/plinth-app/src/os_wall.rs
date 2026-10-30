@@ -163,6 +163,16 @@ mod tests {
         }
     }
 
+    /// Emergency tool: PLINTH_RESTORE_WALLPAPER=<path> sets every monitor back to one picture (Fill, black bars).
+    #[test]
+    #[ignore]
+    fn restore_known_original() {
+        let Ok(path) = std::env::var("PLINTH_RESTORE_WALLPAPER") else { return };
+        let snap = Snapshot { wallpapers: list().unwrap().into_iter().map(|m| (m.id, path.clone())).collect(), position: 4, color: 0 };
+        restore(&snap).unwrap();
+        println!("RESTORED {:?}", snapshot().unwrap());
+    }
+
     #[test]
     fn snapshot_reads_the_current_wallpapers() {
         let s = snapshot().expect("snapshot");

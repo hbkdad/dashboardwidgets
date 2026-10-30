@@ -30,7 +30,7 @@ try {
     $env:PLINTH_STATE = Join-Path $env:TEMP "plinth-verify-mon-state.json"; Remove-Item $env:PLINTH_STATE -ErrorAction SilentlyContinue
     $env:PLINTH_LIBRARY = Join-Path $env:TEMP "plinth-verify-mon-lib\library.json"; $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-verify-mon-walls"
     $env:PLINTH_AUTOTEST = "40"; $env:PLINTH_AUTOTEST_MON = "1"; $env:PLINTH_FAKE_MONITORS = "1920x1080@0,0*#A;1280x1024@1920,0#B;1080x1920@3200,0#C"
-    & .	argetelease\plinth-app.exe
+    & .\target\release\plinth-app.exe
     $code = $LASTEXITCODE
     Remove-Item Env:PLINTH_AUTOTEST_MON, Env:PLINTH_FAKE_MONITORS -ErrorAction SilentlyContinue
     if ($code -ne 0) { throw "monitor lifecycle test failed" }
@@ -41,12 +41,14 @@ try {
     $libd = Join-Path $env:TEMP "plinth-verify-libdata"; Remove-Item $libd -Recurse -Force -ErrorAction SilentlyContinue
     $env:PLINTH_LIBRARY = Join-Path $libd "library.json"; $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-verify-lib-walls"
     $env:PLINTH_AUTOTEST = "60"; $env:PLINTH_AUTOTEST_LIB = $fix
-    & .	argetelease\plinth-app.exe
+    & .\target\release\plinth-app.exe
     $code = $LASTEXITCODE
     Remove-Item Env:PLINTH_AUTOTEST_LIB -ErrorAction SilentlyContinue
     if ($code -ne 0) { throw "library end-to-end test failed (if your wallpaper looks wrong, press Revert in Plinth or read os_snapshot in $($env:PLINTH_STATE))" }
   }
   if ($Click) {
+    # the earlier stages set test switches; the click test must start the app normally
+    Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
     & "$PSScriptRoot\clicktest.ps1"
     if ($LASTEXITCODE -ne 0) { throw "click test failed" }
   }

@@ -71,11 +71,8 @@ try {
   Check "searching narrows the grid to the one matching picture" (Wait-Until { [bool](Find-ByName $w "1 picture") } 8)
   $card = $null; Wait-Until { $script:card = Find-Like $w "pic_00001*by*"; [bool]$script:card } 6 | Out-Null
   Check "the matching picture card is there with its size in its name" ([bool]$card)
-  Invoke-Element $card | Out-Null
-  Check "choosing a picture opens its settings" (Wait-Until { [bool](Find-ByName $w "Use on this monitor") } 6)
-  Invoke-ByName $w "Use on this monitor" | Out-Null
-  Check "using a picture on a monitor was saved (monitor, picture, fit)" (Wait-Until { $s = St; $s -and $s.lib_sel -and (@($s.lib_sel.PSObject.Properties).Count -eq 1) } 12)
-  Check "Windows kept a snapshot of the previous wallpaper so Revert can restore it" (Wait-Until { $s = St; $s -and $s.os_snapshot -and @($s.os_snapshot.wallpapers).Count -ge 1 } 12)
+  Check "choosing a picture opens its settings" (Wait-Until { if (-not (Find-ByName $w "Use on this monitor")) { $c = Find-Like $w "pic_00001*by*"; Invoke-Element $c | Out-Null; Start-Sleep -Milliseconds 400 }; [bool](Find-ByName $w "Use on this monitor") } 12)
+  # The click test never changes the real wallpaper (an aborted run would leave it changed); verify.ps1 -Library covers that end to end.
   Invoke-ByName $w "Add to favorites: pic_00001.jpg" | Out-Null
   Invoke-ByName $w "Favorites" | Out-Null
   Check "a favorite shows under Favorites" (Wait-Until { [bool](Find-ByName $w "1 picture") } 8)
@@ -118,7 +115,6 @@ try {
   Invoke-ByName $w "Revert" | Out-Null
   Check "Revert persisted applied=false" (Wait-Until { (St).applied -eq $false })
   Check "app reported revert" (Wait-Until { Select-String -Path $log -Pattern "hub: revert" -Quiet })
-  Check "Revert cleared the saved wallpaper snapshot (the wallpaper was put back)" (Wait-Until { $s = St; $s -and -not $s.os_snapshot } 12)
 } catch {
   "SCRIPT ERROR: $($_.Exception.Message)"
   $results += [pscustomobject]@{ Name = "script aborted: $($_.Exception.Message)"; Ok = $false }
