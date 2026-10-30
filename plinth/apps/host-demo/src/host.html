@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="frame-src http://pw0.localhost http://pw1.localhost http://pw2.localhost http://pw3.localhost http://pw4.localhost http://pw5.localhost http://pw6.localhost http://pw7.localhost">
+<style>body{margin:0;background:#0b0c0f;color:#eee;font:12px system-ui}iframe{border:1px solid #444;width:230px;height:90px;margin:6px;background:#000}</style></head>
+<body><div id="row"></div>
+<script>
+// Trusted host page. Identity of a message = which iframe it came from, never anything inside the message.
+const widgets = __WIDGETS__;
+const frames = {};
+for (const w of widgets) {
+  const f = document.createElement('iframe');
+  f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+  f.title = w.id;
+  f.src = 'http://pw' + w.slot + '.localhost/?port=__PORT__&only=__ONLY__';
+  document.getElementById('row').appendChild(f);
+  frames[w.slot] = f;
+}
+addEventListener('message', (e) => {
+  for (const [slot, f] of Object.entries(frames)) {
+    if (f.contentWindow === e.source) {
+      let msg; try { msg = JSON.stringify(e.data); } catch (_) { msg = 'null'; }
+      window.ipc.postMessage(JSON.stringify({ slot: Number(slot), msg }));
+      return;
+    }
+  }
+});
+window.__deliver = (slot, resp) => { const f = frames[slot]; if (f) f.contentWindow.postMessage(resp, 'http://pw' + slot + '.localhost'); };
+</script></body></html>

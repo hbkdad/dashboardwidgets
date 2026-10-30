@@ -5,4 +5,4 @@ members = ["crates/plinth-core", "crates/plinth-host", "apps/host-demo", "spikes
 [workspace.package]
 edition = "2021"
 version = "0.2.0"
-license = "UNLICENSED" # decision pending: open-source core vs closed (see ../README.md decision 2)
+license = "Apache-2.0"

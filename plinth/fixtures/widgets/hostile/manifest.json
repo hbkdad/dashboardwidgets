@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "id": "test.hostile",
+  "name": "Hostile test widget (fixture only)",
+  "version": "0.0.1",
+  "type": "widget",
+  "permissions": [
+    { "id": "system.cpu", "reason": "Declared, never granted: must be denied" },
+    { "id": "net.fetch", "hosts": ["localhost.test"], "reason": "Declared, never granted: no network at all" }
+  ]
+}

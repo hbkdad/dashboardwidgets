@@ -3,6 +3,15 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Added
+- `apps/host-demo`: plinth-host in WebView2 with real fixture widgets (`fixtures/widgets/clock-cpu`, `hostile`), Permission Center log, 11 automated checks (11 of 11 pass), forced-proxy experiment (`PLINTH_PROXY=1`).
+- `design/decisions.md` (D1-D12), Apache-2.0 `LICENSE`.
+### Fixed
+- host-demo: wry reports custom-protocol requests as `<scheme>://localhost`, so slot identity now comes from the protocol name.
+### Security
+- Correction: self-navigation opens a bare TCP connection under CSP (destination-address leak); earlier "0 leaked requests" meant 0 HTTP requests. Mitigation validated in 4 of 4 runs: force all WebView2 traffic through a local Plinth proxy (decision D8).
+### Decisions recorded
+- License Apache-2.0 for engine crates; payments via merchant of record; "Plinth" is a codename with naming collisions (public name pending clearance). See `design/decisions.md`.
 
 ## [0.2.0] - 2026-10-30
 Consumer-research revision: widget host library, Setup Cards, Moods, Impact Meter, hub prototype, project skills.
