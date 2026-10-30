@@ -10,7 +10,9 @@
 //! PLINTH_AUTOTEST=<seconds> (apply, exercise, verify, print a report, exit with 0/1).
 
 mod hw;
+mod library;
 mod mon;
+mod os_wall;
 mod sec;
 mod state;
 mod win;
@@ -19,7 +21,12 @@ use plinth_core::{impact, PermissionId};
 use plinth_host::{Host, Package, WallpaperStore, WALLPAPER_SCHEME};
 use plinth_proxy::{Dest, Log, Policy, Verdict};
 use serde_json::{json, Value};
+use library::Library;
+use plinth_core::fit::{self, FitMode};
+use plinth_core::library::{self as corelib, Filter};
 use plinth_core::monitors::{self as mons, MonitorInfo, Resolved};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use state::State;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -34,6 +41,9 @@ use tao::window::{Window, WindowBuilder};
 use wry::{WebContext, WebView, WebViewBuilder};
 
 static HUB_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LIB_RESCAN: AtomicBool = AtomicBool::new(false);
+
+type ThumbJob = (String, wry::RequestAsyncResponder);
 
 const HUB_HTML: &str = include_str!("hub.html");
 const LAYER_HTML: &str = include_str!("layer.html");
@@ -49,6 +59,12 @@ enum Ev {
     Sec(String),
     Monitors(Vec<MonitorInfo>),
     IdentifyEnd,
+    LibraryChanged,
+    Composed { monitor: String, file: String, err: Option<String> },
+    OsSnap(Option<os_wall::Snapshot>),
+    OsDone(String),
+    Picked { purpose: String, path: Option<String> },
+    SlideTick,
     DropHover(bool),
     Auto(u8),
 }
@@ -111,6 +127,10 @@ struct App {
     layout_log: Vec<(Vec<String>, Vec<(String, String, bool)>)>,
     /// Placements before the last "Reset widget positions", for Undo.
     undo_placements: Option<Vec<plinth_core::monitors::Placement>>,
+    lib: Arc<Mutex<Library>>,
+    /// Composed picture file per monitor id (static image wallpapers), ready for the layer to draw.
+    composed: HashMap<String, String>,
+    slide_due: HashMap<String, u64>,
 }
 
 impl App {
@@ -184,7 +204,13 @@ impl App {
                 json!({ "widget": p.widget, "name": names.get(&p.widget).cloned().unwrap_or_default(), "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
             })
             .collect();
-        json!({ "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        let (lib_summary, lib_names): (Value, HashMap<String, String>) = {
+            let l = self.lib.lock().unwrap();
+            (l.summary(), self.st.lib_sel.values().filter_map(|x| l.find(&x.key).map(|i| (x.key.clone(), i.name().to_string()))).collect())
+        };
+        let lib_sel: Vec<Value> = self.st.lib_sel.iter().map(|(m, x)| json!({ "monitor": m, "key": x.key, "name": lib_names.get(&x.key).cloned().unwrap_or_default(), "fit": x.fit, "bg": x.bg })).collect();
+        let slides: Vec<Value> = self.st.slides.iter().map(|(m, x)| json!({ "monitor": m, "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter })).collect();
+        json!({ "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
     }
@@ -249,6 +275,16 @@ impl App {
         let banner = if self.st.safe { r#"<div style="position:fixed;left:50%;top:6%;transform:translateX(-50%);padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.55);border:1px solid #ffb454;color:#ffb454;font:600 14px system-ui">Safe mode: widgets are paused</div>"# } else { "" };
         let beacon = if self.beacon && m.primary { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
         let wp_html = self.wallpaper_html(&self.wallpaper_for(m));
+        let stat: Option<String> = if wp_html.is_empty() { self.composed.get(&m.id).filter(|_| self.st.lib_sel.contains_key(&m.id)).cloned() } else { None };
+        let wall_css = match &stat {
+            Some(f) if library::valid_composed_name(f) => format!("url(\"http://pwc.localhost/{f}\") 0 0/100% 100% no-repeat"),
+            _ => s.wall.to_string(),
+        };
+        let scrim_css = match self.st.scrim.as_str() {
+            "dim" => "background:rgba(0,0,0,.38)",
+            "blur" => "background:rgba(0,0,0,.18);backdrop-filter:blur(8px)",
+            _ => "display:none",
+        };
         let mut html = LAYER_HTML.to_string();
         // Cost experiments (and the basis of the Performance mode setting): PLINTH_NO_ANIM drops the wallpaper drift,
         // PLINTH_NO_BLUR replaces the glass blur with a flat translucent panel.
@@ -256,10 +292,11 @@ impl App {
             html = html.replace("backdrop-filter:blur(22px) saturate(1.35);", "");
         }
         html
-            .replace("__DRIFT__", if self.st.motion && wp_html.is_empty() && std::env::var_os("PLINTH_NO_ANIM").is_none() { "animation:drift 40s ease-in-out infinite alternate" } else { "" })
-            .replace("__WALL__", s.wall)
+            .replace("__DRIFT__", if stat.is_some() { "inset:0" } else if self.st.motion && wp_html.is_empty() && std::env::var_os("PLINTH_NO_ANIM").is_none() { "animation:drift 40s ease-in-out infinite alternate" } else { "" })
+            .replace("__WALL__", &wall_css)
+            .replace("__SCRIM__", scrim_css)
             .replace("__WALLPAPER__", &wp_html)
-            .replace("__MID__", if wp_html.is_empty() { s.mid } else { "transparent" })
+            .replace("__MID__", if wp_html.is_empty() && stat.is_none() { s.mid } else { "transparent" })
             .replace("__GLASS__", s.glass)
             .replace("__INK__", s.ink)
             .replace("__ACCENT__", s.accent)
@@ -411,10 +448,150 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, 
             resp.body(std::borrow::Cow::Owned(r.body)).unwrap()
         });
     }
+    {
+        let dir = app.lib.lock().unwrap().composed.clone();
+        b = b.with_custom_protocol("pwc".to_string(), move |_id, req| {
+            let name = req.uri().path().trim_start_matches('/').to_string();
+            let body = if library::valid_composed_name(&name) { std::fs::read(dir.join(&name)).ok() } else { None };
+            let mut resp = wry::http::Response::builder().header("Cache-Control", "max-age=31536000, immutable").header("X-Content-Type-Options", "nosniff");
+            match body {
+                Some(_) => resp = resp.status(200).header("Content-Type", "image/jpeg"),
+                None => resp = resp.status(404),
+            }
+            resp.body(std::borrow::Cow::Owned(body.unwrap_or_default())).unwrap()
+        });
+    }
     use wry::WebViewBuilderExtWindows;
     b = b.with_additional_browser_args(format!("--proxy-server=http://127.0.0.1:{} --proxy-bypass-list=<-loopback>", app.proxy_port));
     let webview = b.build(&window).ok()?;
     Some(Layer { _window: window, webview, rect: (m.x, m.y, m.width_px, m.height_px), html_hash: hash_str(html) })
+}
+
+fn wallpaper_images_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("PLINTH_WALLPAPER_IMAGES") {
+        return PathBuf::from(p);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let beside = exe.with_file_name("wallpaper-images");
+        if beside.is_dir() {
+            return beside;
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../wallpaper-images")
+}
+
+/// Three workers turn thumbnail requests from the hub into small JPEGs (made once, cached by content key).
+fn start_thumb_pool(lib: Arc<Mutex<Library>>) -> mpsc::Sender<ThumbJob> {
+    let (tx, rx) = mpsc::channel::<ThumbJob>();
+    let rx = Arc::new(Mutex::new(rx));
+    for _ in 0..3 {
+        let (rx, lib) = (rx.clone(), lib.clone());
+        std::thread::spawn(move || loop {
+            let job = rx.lock().unwrap().recv();
+            let Ok((path, responder)) = job else { break };
+            let respond = |status: u16, body: Vec<u8>| {
+                let mut b = wry::http::Response::builder().status(status).header("X-Content-Type-Options", "nosniff");
+                if status == 200 {
+                    b = b.header("Content-Type", "image/jpeg").header("Cache-Control", "max-age=31536000, immutable");
+                }
+                b.body(std::borrow::Cow::Owned(body)).unwrap()
+            };
+            let key = path.trim_start_matches('/').trim_end_matches(".jpg").to_string();
+            if !corelib::valid_key(&key) {
+                responder.respond(respond(404, Vec::new()));
+                continue;
+            }
+            let (src, dest) = {
+                let l = lib.lock().unwrap();
+                match l.find(&key) {
+                    Some(it) if it.status == corelib::Status::Ok => (it.path.clone(), l.thumb_file(&key)),
+                    _ => {
+                        drop(l);
+                        responder.respond(respond(404, Vec::new()));
+                        continue;
+                    }
+                }
+            };
+            if !dest.exists() && library::make_thumb(&src, &dest).is_err() {
+                responder.respond(respond(404, Vec::new()));
+                continue;
+            }
+            responder.respond(match std::fs::read(&dest) {
+                Ok(b) => respond(200, b),
+                Err(_) => respond(404, Vec::new()),
+            });
+        });
+    }
+    tx
+}
+
+/// Compose and (when the wallpaper is applied) set the OS wallpaper for monitors with a static image selection.
+/// Work happens on a worker thread; each monitor reports back with `Ev::Composed`.
+fn apply_statics(app: &App, proxy: &EventLoopProxy<Ev>, only: Option<&str>) {
+    let (minx, miny) = (app.monitors.iter().map(|m| m.x).min().unwrap_or(0), app.monitors.iter().map(|m| m.y).min().unwrap_or(0));
+    let (maxx, maxy) = (app.monitors.iter().map(|m| m.x + m.width_px as i32).max().unwrap_or(1), app.monitors.iter().map(|m| m.y + m.height_px as i32).max().unwrap_or(1));
+    let total = ((maxx - minx).max(1) as u32, (maxy - miny).max(1) as u32);
+    for m in &app.monitors {
+        if only.map_or(false, |o| o != m.id) {
+            continue;
+        }
+        let Some(sel) = app.st.lib_sel.get(&m.id) else { continue };
+        let (src, composed_dir) = {
+            let l = app.lib.lock().unwrap();
+            match l.find(&sel.key) {
+                Some(it) if it.status == corelib::Status::Ok => (it.path.clone(), l.composed.clone()),
+                _ => continue,
+            }
+        };
+        let mode = FitMode::parse(&sel.fit).unwrap_or(FitMode::Fill);
+        let bg = fit::parse_color(&sel.bg).unwrap_or((0, 0, 0));
+        let off = (m.x - minx, m.y - miny);
+        let canvas = (m.width_px, m.height_px);
+        let name = library::composed_name(&sel.key, canvas, mode, &sel.bg, off, total);
+        let (rect, set_os, mid, p) = ((m.x, m.y, m.width_px as i32, m.height_px as i32), app.st.applied && app.fake.lock().unwrap().is_none(), m.id.clone(), proxy.clone());
+        std::thread::spawn(move || {
+            let dest = composed_dir.join(&name);
+            let r = (|| -> Result<(), String> {
+                if !dest.exists() {
+                    library::compose(&src, canvas, mode, bg, off, total, &dest)?;
+                }
+                if set_os {
+                    os_wall::set_for_rect(rect, &dest.to_string_lossy())?;
+                }
+                Ok(())
+            })();
+            let _ = p.send_event(Ev::Composed { monitor: mid, file: name, err: r.err() });
+        });
+    }
+}
+
+/// Take the "before" snapshot of the OS wallpaper if there is none yet, then apply. The snapshot always comes first so Revert is exact.
+fn request_statics(app: &App, proxy: &EventLoopProxy<Ev>, only: Option<&str>) {
+    if app.st.lib_sel.is_empty() {
+        return;
+    }
+    if app.st.applied && app.st.os_snapshot.is_none() && app.fake.lock().unwrap().is_none() {
+        let p = proxy.clone();
+        std::thread::spawn(move || {
+            let _ = p.send_event(Ev::OsSnap(os_wall::snapshot().ok()));
+        });
+    } else {
+        apply_statics(app, proxy, only);
+    }
+}
+
+/// Keep the composed-picture cache small: delete the oldest files that no monitor is using.
+fn gc_composed(app: &App) {
+    let dir = app.lib.lock().unwrap().composed.clone();
+    let keep: Vec<&String> = app.composed.values().collect();
+    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    let mut files: Vec<(std::time::SystemTime, PathBuf, String)> = rd.filter_map(|e| e.ok()).filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path(), e.file_name().to_string_lossy().to_string()))).collect();
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, p, n) in files.into_iter().skip(24) {
+        if !keep.iter().any(|k| **k == n) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
 }
 
 fn current_monitors(fake: &Arc<Mutex<Option<String>>>) -> Vec<MonitorInfo> {
@@ -424,11 +601,15 @@ fn current_monitors(fake: &Arc<Mutex<Option<String>>>) -> Vec<MonitorInfo> {
     }
 }
 
-fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>) -> WebView {
+fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>, thumbs: &mpsc::Sender<ThumbJob>) -> WebView {
     let p = proxy.clone();
+    let tx = thumbs.clone();
     let dp = proxy.clone();
     WebViewBuilder::new_with_web_context(ctx)
         .with_html(HUB_HTML)
+        .with_asynchronous_custom_protocol("pwth".to_string(), move |_id, req, responder| {
+            let _ = tx.send((req.uri().path().to_string(), responder));
+        })
         .with_drag_drop_handler(move |ev| {
             match ev {
                 wry::DragDropEvent::Enter { .. } => {
@@ -520,7 +701,7 @@ fn main() {
     st.first_run = st.first_run && autotest.is_none();
     let walls = Arc::new(Mutex::new(WallpaperStore::new(wallpapers_dir(), user_wallpapers_dir())));
     println!("wallpapers: {} found", walls.lock().unwrap().list().len());
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None };
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new() };
     app.monitors = current_monitors(&app.fake);
     println!("monitors: {}", app.monitors.iter().map(|m| format!("{} {}x{} at {},{} {}%{}", m.name, m.width_px, m.height_px, m.x, m.y, m.scale_percent(), if m.primary { " primary" } else { "" })).collect::<Vec<_>>().join(" | "));
     app.recompute();
@@ -535,10 +716,19 @@ fn main() {
     // ---- windows ----
     let event_loop = EventLoopBuilder::<Ev>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    let lib_file = std::env::var_os("PLINTH_LIBRARY").map(PathBuf::from).unwrap_or_else(|| state::local_dir().join("library.json"));
+    let lib_dir = lib_file.parent().map(|p| p.to_path_buf()).unwrap_or_else(state::local_dir);
+    app.lib = Arc::new(Mutex::new(Library::load(lib_file, lib_dir.join("thumbs"), lib_dir.join("composed"), Some(wallpaper_images_dir()))));
+    let thumb_tx = start_thumb_pool(app.lib.clone());
+    let (n_items, n_roots) = {
+        let l = app.lib.lock().unwrap();
+        (l.items.len(), l.roots.len())
+    };
+    println!("library: {n_items} items, {n_roots} folders");
     let hub_window = WindowBuilder::new().with_title("Plinth").with_inner_size(tao::dpi::LogicalSize::new(1180.0, 780.0)).build(&event_loop).unwrap();
     let hub_id = hub_window.id();
     let mut hub_ctx = WebContext::new(Some(state::local_dir().join("wv-hub")));
-    let mut hub_view: Option<WebView> = Some(build_hub(&hub_window, &mut hub_ctx, &proxy));
+    let mut hub_view: Option<WebView> = Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx));
     // Tray icon + menu (background mode: closing the hub hides it; Quit in the tray exits).
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     let menu = Menu::new();
@@ -626,6 +816,38 @@ fn main() {
             }
         });
     }
+    {
+        // Library watcher: rescan every 5 s while the hub is open, every 60 s in the background, and at once when asked. A scan
+        // compares file names, sizes and times (no image is decoded unless it is new or changed), so an unchanged library is cheap.
+        let (lib, p) = (app.lib.clone(), proxy.clone());
+        std::thread::spawn(move || {
+            let (mut waited, mut first) = (0u64, true);
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                waited += 1;
+                let interval = if HUB_HIDDEN.load(Ordering::Relaxed) { 60 } else { 5 };
+                if first || LIB_RESCAN.swap(false, Ordering::Relaxed) || waited >= interval {
+                    first = false;
+                    waited = 0;
+                    let (roots, items) = lib.lock().unwrap().snapshot();
+                    let out = library::scan(&roots, &items);
+                    let mut l = lib.lock().unwrap();
+                    let before = l.revision;
+                    l.apply_scan(out);
+                    if l.revision != before {
+                        l.save();
+                        drop(l);
+                        let _ = p.send_event(Ev::LibraryChanged);
+                    }
+                }
+            }
+        });
+        let p2 = proxy.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(15));
+            let _ = p2.send_event(Ev::SlideTick);
+        });
+    }
     let tick = proxy.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(30));
@@ -638,6 +860,38 @@ fn main() {
                 let _ = p.send_event(Ev::Hub(j.to_string()));
             };
             let nap = |s: u64| std::thread::sleep(Duration::from_secs(s));
+            if let Some(dir) = std::env::var_os("PLINTH_AUTOTEST_LIB") {
+                // Library end to end on the real monitors: add a folder, scan, pick a picture (composed and set as the OS wallpaper),
+                // watch a new file appear, run the slideshow, then Revert and check the OS wallpaper is exactly as before.
+                let dir = PathBuf::from(dir);
+                nap(2);
+                let _ = p.send_event(Ev::Auto(40)); // OS wallpaper before anything
+                hub(&p, r#"{"cmd":"apply"}"#);
+                nap(3);
+                hub(&p, &json!({ "cmd": "lib_add_folder", "path": dir.to_string_lossy() }).to_string());
+                nap(7);
+                let _ = p.send_event(Ev::Auto(41)); // library summary after the first scan
+                let _ = p.send_event(Ev::Auto(42)); // choose the first picture for the primary monitor (fit, magenta bars)
+                nap(8);
+                let _ = p.send_event(Ev::Auto(43)); // composed file and OS wallpaper
+                let extra = dir.join("added_later.png");
+                let _ = std::fs::copy(dir.join("duplicate_of_a_picture.png"), dir.join("copy_for_slideshow.png")); // a duplicate: must stay hidden
+                if let Some(first) = std::fs::read_dir(dir.join("set1")).ok().and_then(|r| r.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.is_file())) {
+                    let _ = std::fs::copy(first, &extra); // a NEW picture (not byte-identical to anything else: it is a copy, so it is a duplicate too)
+                }
+                let fresh: image::RgbImage = image::ImageBuffer::from_pixel(320, 180, image::Rgb([9, 99, 199]));
+                let _ = fresh.save(dir.join("fresh.png")); // the only NEW picture of the three files added
+                nap(8);
+                let _ = p.send_event(Ev::Auto(44)); // watcher picked up the new files
+                let _ = p.send_event(Ev::Auto(45)); // force the slideshow to be due and tick
+                nap(8);
+                let _ = p.send_event(Ev::Auto(46)); // the picture changed
+                hub(&p, r#"{"cmd":"revert"}"#);
+                nap(8);
+                let _ = p.send_event(Ev::Auto(47)); // OS wallpaper after Revert
+                let _ = p.send_event(Ev::Auto(48));
+                return;
+            }
             if std::env::var_os("PLINTH_AUTOTEST_MON").is_some() {
                 // Monitor lifecycle on fake monitors (PLINTH_FAKE_MONITORS="...#A;...#B;...#C"): assign, unplug B, replug B, park all.
                 let spec3 = std::env::var("PLINTH_FAKE_MONITORS").unwrap_or_default();
@@ -713,6 +967,7 @@ fn main() {
     }
     let _ = &sec_last;
     let mut mon_snaps: Vec<MonSnap> = Vec::new();
+    let mut lp = LibProbe::default();
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
     let mut applied_before_start = app.st.applied;
@@ -727,7 +982,7 @@ fn main() {
         // The hub's browser process is released while the hub is hidden (about 200 MB) and rebuilt when it is shown again,
         // whether from the tray, a second launch, or any other way the window becomes visible.
         if hub_view.is_none() && hub_window.is_visible() {
-            hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy));
+            hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx));
             HUB_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
             println!("hub window rebuilt");
         }
@@ -754,12 +1009,20 @@ fn main() {
                     "apply" => {
                         app.st.applied = true;
                         sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                        request_statics(&app, &proxy, None);
                         println!("hub: apply {} (layer present: {}, layers: {})", app.st.scene, !layers.is_empty(), layers.len());
                         msg = Some(format!("Applied {}. Your previous desktop is restored with Revert.", scene(&app.st.scene).name));
                     }
                     "revert" => {
                         app.st.applied = false;
                         layers.clear();
+                        if let Some(snap) = app.st.os_snapshot.take() {
+                            let p = proxy.clone();
+                            std::thread::spawn(move || {
+                                let r = os_wall::restore(&snap);
+                                let _ = p.send_event(Ev::OsDone(r.err().unwrap_or_default()));
+                            });
+                        }
                         println!("hub: revert");
                         msg = Some("Reverted. Your desktop is back to how it was.".into());
                     }
@@ -784,6 +1047,154 @@ fn main() {
                         app.sync_proxy();
                         reload = app.st.applied;
                         msg = Some(if app.st.safe { "Safe mode on. Widgets are paused and the network is closed.".into() } else { "Safe mode off.".into() });
+                    }
+                    "lib_query" => {
+                        let (q, f) = (v.get("q").and_then(Value::as_str).unwrap_or(""), v.get("filter").and_then(Value::as_str).unwrap_or("all"));
+                        let (off, lim) = (v.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize, v.get("limit").and_then(Value::as_u64).unwrap_or(60) as usize);
+                        let req = v.get("req").cloned().unwrap_or(Value::Null);
+                        let page = app.lib.lock().unwrap().page(q, Filter::parse(f), off, lim);
+                        if let Some(view) = &hub_view {
+                            let _ = view.evaluate_script(&format!("__onLibrary({})", json!({ "req": req, "page": page })));
+                        }
+                    }
+                    "lib_add_folder" => {
+                        let path = v.get("path").and_then(Value::as_str).unwrap_or("");
+                        let r = app.lib.lock().unwrap().add_root(path);
+                        match r {
+                            Ok(()) => {
+                                LIB_RESCAN.store(true, Ordering::Relaxed);
+                                msg = Some("Folder added. Plinth is reading its pictures now.".into());
+                            }
+                            Err(e) => msg = Some(e),
+                        }
+                    }
+                    "lib_pick" => {
+                        let purpose = v.get("purpose").and_then(Value::as_str).unwrap_or("folder").to_string();
+                        let (p, owner) = (proxy.clone(), hub_window.hwnd() as isize);
+                        std::thread::spawn(move || {
+                            let path = os_wall::pick(!purpose.starts_with("locate:"), owner);
+                            let _ = p.send_event(Ev::Picked { purpose, path });
+                        });
+                    }
+                    "lib_remove_folder" => {
+                        let path = v.get("path").and_then(Value::as_str).unwrap_or("");
+                        match app.lib.lock().unwrap().remove_root(path) {
+                            Ok(()) => msg = Some("Folder removed from the library. Your pictures were not touched.".into()),
+                            Err(e) => msg = Some(e),
+                        }
+                    }
+                    "lib_unexclude" => {
+                        let (root, sub) = (v.get("root").and_then(Value::as_str).unwrap_or(""), v.get("path").and_then(Value::as_str).unwrap_or(""));
+                        let _ = app.lib.lock().unwrap().set_exclude(root, sub, false);
+                        LIB_RESCAN.store(true, Ordering::Relaxed);
+                    }
+                    "lib_fav" => {
+                        let (key, on) = (v.get("key").and_then(Value::as_str).unwrap_or(""), v.get("on").and_then(Value::as_bool).unwrap_or(false));
+                        app.lib.lock().unwrap().set_favorite(key, on);
+                    }
+                    "lib_remove_item" => {
+                        let key = v.get("key").and_then(Value::as_str).unwrap_or("");
+                        app.lib.lock().unwrap().remove_item(key);
+                        msg = Some("Removed from the library. The picture file was not deleted.".into());
+                    }
+                    "lib_rescan" => {
+                        LIB_RESCAN.store(true, Ordering::Relaxed);
+                        msg = Some("Looking for changes…".into());
+                    }
+                    "set_static" => {
+                        let (mid, key) = (v.get("monitor").and_then(Value::as_str).unwrap_or(""), v.get("key").and_then(Value::as_str).unwrap_or(""));
+                        let fit_s = v.get("fit").and_then(Value::as_str).filter(|f| FitMode::parse(f).is_some());
+                        let bg_s = v.get("bg").and_then(Value::as_str).filter(|c| fit::parse_color(c).is_some());
+                        let usable = app.monitors.iter().any(|m| m.id == mid) && app.lib.lock().unwrap().find(key).map_or(false, |i| i.status == corelib::Status::Ok);
+                        if usable {
+                            let prev = app.st.lib_sel.get(mid).cloned();
+                            app.st.lib_sel.insert(mid.to_string(), state::Sel { key: key.to_string(), fit: fit_s.map(String::from).or(prev.as_ref().map(|p| p.fit.clone())).unwrap_or_else(|| "fill".into()), bg: bg_s.map(String::from).or(prev.map(|p| p.bg)).unwrap_or_else(|| "#000000".into()) });
+                            app.lib.lock().unwrap().touch(key);
+                            app.composed.remove(mid);
+                            relayout = true;
+                            request_statics(&app, &proxy, Some(mid));
+                            msg = Some(if app.st.applied { "Wallpaper set.".into() } else { "Chosen. Press Apply to put it on your desktop.".into() });
+                        } else {
+                            msg = Some("That picture or monitor is not available.".into());
+                        }
+                    }
+                    "clear_static" => {
+                        let mid = v.get("monitor").and_then(Value::as_str).unwrap_or("");
+                        if app.st.lib_sel.remove(mid).is_some() {
+                            app.composed.remove(mid);
+                            app.st.slides.remove(mid);
+                            relayout = true;
+                            msg = Some("Picture removed from that monitor. Revert restores the wallpaper you had before.".into());
+                        }
+                    }
+                    "slideshow" => {
+                        let mid = v.get("monitor").and_then(Value::as_str).unwrap_or("").to_string();
+                        if app.monitors.iter().any(|m| m.id == mid) {
+                            if v.get("on").and_then(Value::as_bool).unwrap_or(false) {
+                                let minutes = v.get("minutes").and_then(Value::as_u64).unwrap_or(30).clamp(1, 1440) as u32;
+                                let filter = v.get("filter").and_then(Value::as_str).filter(|f| ["all", "favorites"].contains(f)).unwrap_or("all").to_string();
+                                app.st.slides.insert(mid.clone(), state::Slide { minutes, shuffle: v.get("shuffle").and_then(Value::as_bool).unwrap_or(false), filter });
+                                app.slide_due.insert(mid, library::now() + minutes as u64 * 60);
+                                msg = Some(format!("Slideshow on: a new picture every {minutes} minutes while Plinth is running."));
+                            } else {
+                                app.st.slides.remove(&mid);
+                                app.slide_due.remove(&mid);
+                                msg = Some("Slideshow off.".into());
+                            }
+                        }
+                    }
+                    "scrim" => {
+                        let m = v.get("mode").and_then(Value::as_str).unwrap_or("none");
+                        if ["none", "dim", "blur"].contains(&m) {
+                            app.st.scrim = m.to_string();
+                            reload = true;
+                            msg = Some(match m { "dim" => "Wallpapers are dimmed behind widgets.", "blur" => "Wallpapers are softened behind widgets.", _ => "No extra shading behind widgets." }.into());
+                        }
+                    }
+                    "profile_save" => {
+                        let name: String = v.get("name").and_then(Value::as_str).unwrap_or("").chars().filter(|c| !c.is_control()).take(40).collect();
+                        let name = name.trim().to_string();
+                        if name.is_empty() {
+                            msg = Some("Give the profile a name first.".into());
+                        } else if app.st.profiles.len() >= 32 && !app.st.profiles.contains_key(&name) {
+                            msg = Some("Too many profiles; delete one first.".into());
+                        } else {
+                            let p = json!({ "scene": app.st.scene, "wallpaper": app.st.wallpaper, "monitor_walls": app.st.monitor_walls, "placements": app.st.placements, "fallback": app.st.fallback, "scrim": app.st.scrim,
+                                "lib_sel": app.st.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(),
+                                "slides": app.st.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>() });
+                            app.st.profiles.insert(name.clone(), p);
+                            msg = Some(format!("Saved \"{name}\": wallpapers, widgets and monitor assignments together."));
+                        }
+                    }
+                    "profile_delete" => {
+                        let name = v.get("name").and_then(Value::as_str).unwrap_or("");
+                        if app.st.profiles.remove(name).is_some() {
+                            msg = Some("Profile deleted.".into());
+                        }
+                    }
+                    "profile_apply" => {
+                        let name = v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                        if let Some(p) = app.st.profiles.get(&name).cloned() {
+                            if let Some(sc) = p.get("scene").and_then(Value::as_str) {
+                                app.st.scene = scene(sc).id.to_string();
+                            }
+                            app.st.wallpaper = p.get("wallpaper").and_then(Value::as_str).filter(|w| w.is_empty() || app.walls.lock().unwrap().get(w).is_some()).unwrap_or("").to_string();
+                            app.st.monitor_walls = p.get("monitor_walls").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, w)| w.as_str().filter(|w| app.walls.lock().unwrap().get(w).is_some()).map(|w| (k.clone(), w.to_string()))).collect()).unwrap_or_default();
+                            app.st.placements = p.get("placements").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect()).unwrap_or_default();
+                            app.st.fallback = p.get("fallback").and_then(Value::as_str).unwrap_or("").to_string();
+                            app.st.scrim = p.get("scrim").and_then(Value::as_str).filter(|m| ["none", "dim", "blur"].contains(m)).unwrap_or("none").to_string();
+                            let (sel_keys, slide_keys) = (p.get("lib_sel").cloned().unwrap_or(Value::Null), p.get("slides").cloned().unwrap_or(Value::Null));
+                            app.st.lib_sel = sel_keys.as_object().map(|o| o.iter().filter_map(|(k, x)| Some((k.clone(), state::Sel { key: x.get("key")?.as_str().filter(|k| corelib::valid_key(k))?.to_string(), fit: x.get("fit").and_then(Value::as_str).filter(|f| FitMode::parse(f).is_some()).unwrap_or("fill").to_string(), bg: x.get("bg").and_then(Value::as_str).filter(|c| fit::parse_color(c).is_some()).unwrap_or("#000000").to_string() }))).collect()).unwrap_or_default();
+                            app.st.slides = slide_keys.as_object().map(|o| o.iter().map(|(k, x)| (k.clone(), state::Slide { minutes: x.get("minutes").and_then(Value::as_u64).unwrap_or(30).clamp(1, 1440) as u32, shuffle: x.get("shuffle").and_then(Value::as_bool).unwrap_or(false), filter: x.get("filter").and_then(Value::as_str).filter(|f| ["all", "favorites"].contains(f)).unwrap_or("all").to_string() })).collect()).unwrap_or_default();
+                            app.composed.clear();
+                            app.park_all = false;
+                            reload = true;
+                            relayout = true;
+                            request_statics(&app, &proxy, None);
+                            msg = Some(format!("\"{name}\" restored: wallpapers, widgets and monitor assignments."));
+                        } else {
+                            msg = Some("That profile does not exist.".into());
+                        }
                     }
                     "assign" => {
                         // Move a widget to a monitor. Anchor, offsets and size are kept, so it lands in the same place relative to the
@@ -1012,6 +1423,15 @@ fn main() {
             Event::UserEvent(Ev::Drop(paths)) => {
                 let (mut added, mut last_id, mut err) = (0, None, None);
                 for p in paths.iter().take(8) {
+                    if p.is_dir() {
+                        let r = app.lib.lock().unwrap().add_root(&p.to_string_lossy());
+                        LIB_RESCAN.store(true, Ordering::Relaxed);
+                        match r {
+                            Ok(()) => added += 1,
+                            Err(e) => err = Some(e),
+                        }
+                        continue;
+                    }
                     let r = app.walls.lock().unwrap().import_video(p);
                     match r {
                         Ok(w) => {
@@ -1031,7 +1451,7 @@ fn main() {
                 let m = match (added, err) {
                     (0, Some(e)) => e,
                     (n, Some(e)) => format!("Added {n}. {e}"),
-                    (1, None) => "Video added and selected. Press Apply to put it on your desktop.".to_string(),
+                    (1, None) => "Added. Videos are selected as wallpaper; folders join your library.".to_string(),
                     (n, None) => format!("Added {n} videos; the last one is selected."),
                 };
                 println!("hub: drop handled ({added} added)");
@@ -1047,15 +1467,94 @@ fn main() {
                 let parked = app.resolved.iter().filter(|r| r.parked).count();
                 println!("layout recomputed: {} monitors, {} widgets, {} parked, {} layers", app.monitors.len(), app.resolved.len(), parked, layers.len());
                 sampler.set_active(!layers.is_empty() && !app.st.safe && !app.paused);
+                app.composed.clear();
+                request_statics(&app, &proxy, None);
                 let note = if !gone.is_empty() && parked > 0 { Some(format!("{} disconnected: {parked} widget(s) moved to a visible monitor and will return when it reconnects.", gone.join(", "))) } else if !came.is_empty() { Some(format!("{} connected.", came.join(", "))) } else { None };
                 reply(&app, &hub_view, note.as_deref());
             }
             Event::UserEvent(Ev::IdentifyEnd) => identify.clear(),
-            Event::UserEvent(Ev::Save) => app.persist(),
+            Event::UserEvent(Ev::LibraryChanged) => {
+                if let Some(v) = &hub_view {
+                    let _ = v.evaluate_script("__libChanged()");
+                }
+                reply(&app, &hub_view, None);
+            }
+            Event::UserEvent(Ev::OsSnap(snap)) => {
+                if let Some(s) = snap {
+                    app.st.os_snapshot = Some(s);
+                    app.persist();
+                }
+                apply_statics(&app, &proxy, None);
+            }
+            Event::UserEvent(Ev::OsDone(err)) => {
+                println!("os wallpaper restore: {}", if err.is_empty() { "ok" } else { err.as_str() });
+                reply(&app, &hub_view, Some(if err.is_empty() { "Your previous wallpaper is back." } else { "Some wallpapers could not be restored automatically; set them in Windows Settings." }));
+            }
+            Event::UserEvent(Ev::Composed { monitor, file, err }) => {
+                match err {
+                    None => {
+                        app.composed.insert(monitor, file);
+                        sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                        gc_composed(&app);
+                    }
+                    Some(e) => {
+                        println!("static wallpaper failed: {e}");
+                        reply(&app, &hub_view, Some(&format!("Could not set that picture: {e}")));
+                    }
+                }
+            }
+            Event::UserEvent(Ev::Picked { purpose, path }) => {
+                if let Some(p) = path {
+                    let msg = if purpose == "folder" {
+                        let r = app.lib.lock().unwrap().add_root(&p);
+                        LIB_RESCAN.store(true, Ordering::Relaxed);
+                        r.err().unwrap_or_else(|| "Folder added. Plinth is reading its pictures now.".into())
+                    } else if let Some(root) = purpose.strip_prefix("exclude:") {
+                        let r = app.lib.lock().unwrap().set_exclude(root, &p, true);
+                        LIB_RESCAN.store(true, Ordering::Relaxed);
+                        r.err().unwrap_or_else(|| "That subfolder will be skipped.".into())
+                    } else if let Some(key) = purpose.strip_prefix("locate:") {
+                        let r = app.lib.lock().unwrap().relocate(key, &p);
+                        r.err().unwrap_or_else(|| "Found it again.".into())
+                    } else {
+                        String::new()
+                    };
+                    reply(&app, &hub_view, Some(&msg));
+                }
+            }
+            Event::UserEvent(Ev::SlideTick) => {
+                if app.st.applied && !app.paused && !app.st.slides.is_empty() {
+                    let t = library::now();
+                    let due: Vec<(String, state::Slide)> = app.st.slides.iter().filter(|(m, _)| app.slide_due.get(*m).map_or(true, |d| *d <= t)).map(|(m, s)| (m.clone(), s.clone())).collect();
+                    for (mid, sl) in due {
+                        let pick = {
+                            let l = app.lib.lock().unwrap();
+                            let f = if sl.filter == "favorites" { Filter::Favorites } else { Filter::All };
+                            let ok: Vec<&corelib::Item> = corelib::query(&l.items, "", f).into_iter().map(|i| &l.items[i]).filter(|i| i.status == corelib::Status::Ok).collect();
+                            let cur = app.st.lib_sel.get(&mid).and_then(|s| ok.iter().position(|i| i.key == s.key));
+                            corelib::next_index(ok.len(), cur, sl.shuffle, t).map(|n| ok[n].key.clone())
+                        };
+                        app.slide_due.insert(mid.clone(), t + sl.minutes as u64 * 60);
+                        if let Some(key) = pick {
+                            if let Some(sel) = app.st.lib_sel.get_mut(&mid) {
+                                sel.key = key.clone();
+                                app.lib.lock().unwrap().touch(&key);
+                                app.composed.remove(&mid);
+                                request_statics(&app, &proxy, Some(&mid));
+                                println!("slideshow: monitor {mid} -> {key}");
+                            }
+                        }
+                    }
+                }
+            }
+            Event::UserEvent(Ev::Save) => {
+                app.persist();
+                app.lib.lock().unwrap().save();
+            }
             Event::UserEvent(Ev::Menu(name)) => match name.as_str() {
                 "open" => {
                     if hub_view.is_none() {
-                        hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy));
+                        hub_view = Some(build_hub(&hub_window, &mut hub_ctx, &proxy, &thumb_tx));
                     }
                     HUB_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
                     hub_window.set_visible(true);
@@ -1097,6 +1596,52 @@ fn main() {
                     }
                 }
                 21..=25 | 27 | 28 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                40 => lp.before = os_wall::snapshot().ok(),
+                41 => {
+                    lp.summary1 = Some(app.lib.lock().unwrap().summary());
+                    lp.problems = app.lib.lock().unwrap().items.iter().filter(|i| i.status != corelib::Status::Ok).map(|i| (i.name().to_string(), i.status.label().to_string())).collect();
+                }
+                42 => {
+                    let first = {
+                        let l = app.lib.lock().unwrap();
+                        let ids: Vec<&corelib::Item> = corelib::query(&l.items, "pic_", Filter::All).into_iter().map(|i| &l.items[i]).filter(|i| i.status == corelib::Status::Ok && !l.roots.iter().any(|r| r.bundled && r.path == i.root)).collect();
+                        ids.first().map(|i| i.key.clone())
+                    };
+                    lp.key1 = first.clone();
+                    if let (Some(k), Some(pid)) = (first, app.primary_id()) {
+                        let _ = proxy.send_event(Ev::Hub(json!({ "cmd": "set_static", "monitor": pid, "key": k, "fit": "fit", "bg": "#ff00ff" }).to_string()));
+                    }
+                }
+                43 => {
+                    lp.os_after_set = os_wall::snapshot().ok();
+                    if let (Some(pid), Some(f)) = (app.primary_id(), app.primary_id().and_then(|p| app.composed.get(&p).cloned())) {
+                        let path = app.lib.lock().unwrap().composed.join(&f);
+                        lp.composed_dims = image::image_dimensions(&path).ok();
+                        lp.composed_path = Some(path.to_string_lossy().to_string());
+                        lp.pid = Some(pid);
+                    }
+                }
+                44 => {
+                    lp.summary2 = Some(app.lib.lock().unwrap().summary());
+                }
+                45 => {
+                    if let Some(pid) = app.primary_id() {
+                        lp.key_before_slide = app.st.lib_sel.get(&pid).map(|s| s.key.clone());
+                        app.st.slides.insert(pid.clone(), state::Slide { minutes: 1, shuffle: true, filter: "all".into() });
+                        app.slide_due.insert(pid, 0);
+                        let _ = proxy.send_event(Ev::SlideTick);
+                    }
+                }
+                46 => lp.key_after_slide = app.primary_id().and_then(|p| app.st.lib_sel.get(&p).map(|s| s.key.clone())),
+                47 => {
+                    lp.after = os_wall::snapshot().ok();
+                    lp.snapshot_cleared = app.st.os_snapshot.is_none();
+                }
+                48 => {
+                    let code = library_report(&lp);
+                    app.persist();
+                    std::process::exit(code);
+                }
                 26 => {
                     let code = monitor_report(&app, &mon_snaps);
                     app.persist();
@@ -1124,6 +1669,59 @@ fn main() {
             _ => {}
         }
     });
+}
+
+#[derive(Default)]
+struct LibProbe {
+    before: Option<os_wall::Snapshot>,
+    os_after_set: Option<os_wall::Snapshot>,
+    after: Option<os_wall::Snapshot>,
+    summary1: Option<Value>,
+    summary2: Option<Value>,
+    problems: Vec<(String, String)>,
+    key1: Option<String>,
+    composed_dims: Option<(u32, u32)>,
+    composed_path: Option<String>,
+    pid: Option<String>,
+    key_before_slide: Option<String>,
+    key_after_slide: Option<String>,
+    snapshot_cleared: bool,
+}
+
+fn library_report(p: &LibProbe) -> i32 {
+    println!("\n===== Library end to end =====");
+    println!("   summary after first scan: {}", p.summary1.as_ref().map_or("none".into(), |v| v.to_string()));
+    println!("   summary after the watcher run: {}", p.summary2.as_ref().map_or("none".into(), |v| format!("count {} duplicates {}", v["count"], v["duplicates"])));
+    println!("   problems: {:?}", p.problems);
+    println!("   chosen key: {:?}; composed {:?} dims {:?}", p.key1, p.composed_path, p.composed_dims);
+    println!("   OS wallpaper before: {:?}", p.before.as_ref().map(|b| &b.wallpapers));
+    println!("   OS wallpaper set:    {:?}", p.os_after_set.as_ref().map(|b| &b.wallpapers));
+    println!("   OS wallpaper after:  {:?}", p.after.as_ref().map(|b| &b.wallpapers));
+    println!("   slideshow {:?} -> {:?}", p.key_before_slide, p.key_after_slide);
+    let count = |v: &Option<Value>| v.as_ref().and_then(|s| s["count"].as_u64()).unwrap_or(0);
+    let norm = |s: &str| s.replace('/', "\\").to_ascii_lowercase();
+    let primary_path = |s: &Option<os_wall::Snapshot>, pid: &Option<String>| s.as_ref().and_then(|s| s.wallpapers.iter().find(|(id, _)| Some(id) == pid.as_ref()).map(|(_, w)| w.clone()));
+    let checks: Vec<(&str, bool)> = vec![
+        ("the folder was scanned: the test pictures are in the library (30 unique, plus the 12 bundled)", count(&p.summary1) >= 40),
+        ("the byte-identical copy is hidden as a duplicate", p.summary1.as_ref().map_or(false, |s| s["duplicates"].as_u64().unwrap_or(0) >= 1)),
+        ("the corrupt file is listed with a clear status instead of crashing the scan", p.problems.iter().any(|(n, st)| n == "broken.jpg" && st == "cannot be read")),
+        ("the text file was ignored", !p.problems.iter().any(|(n, _)| n == "readme.txt")),
+        ("a picture was composed at exactly the monitor's resolution", p.composed_dims.is_some() && p.pid.as_ref().map_or(false, |pid| pid.len() > 4)),
+        ("Windows reports the composed picture as the wallpaper of that monitor", match (primary_path(&p.os_after_set, &p.pid), &p.composed_path) { (Some(a), Some(b)) => norm(&a) == norm(b), _ => false }),
+        ("a new picture added to the watched folder appeared without pressing anything (and two extra copies stayed hidden)", count(&p.summary2) == count(&p.summary1) + 1 && p.summary2.as_ref().map_or(false, |s| s["duplicates"].as_u64().unwrap_or(0) >= 3)),
+        ("the slideshow moved to a different picture", p.key_before_slide.is_some() && p.key_after_slide.is_some() && p.key_before_slide != p.key_after_slide),
+        ("Revert put every monitor's wallpaper back exactly as it was", p.before.is_some() && p.before.as_ref().map(|b| &b.wallpapers) == p.after.as_ref().map(|a| &a.wallpapers)),
+        ("Revert cleared the saved snapshot", p.snapshot_cleared),
+    ];
+    let mut failed = 0;
+    for (n, ok) in &checks {
+        println!("[{}] {n}", if *ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed += 1;
+        }
+    }
+    println!("\n{} of {} checks passed", checks.len() - failed, checks.len());
+    i32::from(failed != 0)
 }
 
 struct MonSnap {

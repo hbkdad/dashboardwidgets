@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: http://pwth.localhost; base-uri 'none'; form-action 'none'">
 <title>Plinth</title>
 <style>
 :root{--bg:#0b0c0f;--s1:#12141a;--s2:#1a1d26;--s3:#242836;--bd:rgba(255,255,255,.09);--bd2:rgba(255,255,255,.18);--tx:#eef0f6;--mut:#9aa1b5;--faint:#8a91ab;--sig:#7cf2c8;--ink:#04281d;--amb:#ffb454;--red:#ff6b6b;--info:#8ab4ff;--accent:var(--sig);--ease:cubic-bezier(.16,1,.3,1);--font:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;--disp:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,monospace}
@@ -56,6 +56,14 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 .scard{padding:20px}.scard h2{margin-bottom:10px}.srow{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--bd);font-size:.875rem}.srow:last-child{border:0}.srow span:last-child{color:var(--mut);text-align:right}
 .tbl{width:100%;border-collapse:collapse;font-size:.8125rem;margin-top:8px}.tbl th{text-align:left;color:var(--mut);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--bd)}.tbl td{padding:6px 8px;border-bottom:1px dashed var(--bd);word-break:break-all}
 .note{margin-top:22px;padding:14px 18px;border:1px solid var(--bd2);border-radius:16px;background:rgba(138,180,255,.07);color:var(--mut);font-size:.8125rem}
+.mdiag{position:relative;margin:22px auto 0;width:min(100%,calc(340px*var(--ar,1.78)));aspect-ratio:var(--ar,1.78);border:1px dashed var(--bd2);border-radius:20px;background:rgba(255,255,255,.02)}
+.mon{position:absolute;border:1.5px solid var(--bd2);border-radius:10px;background:linear-gradient(160deg,var(--s2),var(--s1));overflow:hidden;padding:6px;transition:border-color .15s,box-shadow .15s}
+.mon.pri{border-color:var(--accent)}.mon.over{box-shadow:0 0 0 3px var(--accent)}.mon.target{cursor:pointer;border-style:dashed}
+.mon .no{position:absolute;right:8px;bottom:2px;font:700 2.2rem/1 var(--disp);opacity:.25}.mon .mn{font-size:.6875rem;color:var(--mut);display:block;max-width:80%}
+.wchip{display:inline-block;margin:2px 3px 0 0;padding:2px 8px;border-radius:8px;border:1px solid var(--bd2);background:var(--s3);font-size:.6875rem;touch-action:none;cursor:grab}
+.wchip.parked{border-style:dashed;color:var(--amb);border-color:var(--amb)}.wchip.sel{outline:2px solid var(--accent)}.ghost{position:fixed;z-index:50;pointer-events:none;opacity:.9}
+.mcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:22px}.mcard{padding:18px}
+select{font:inherit;color:var(--tx);background:var(--s3);border:1px solid var(--bd2);border-radius:10px;padding:6px 10px;max-width:100%}
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:var(--s3);border:1px solid var(--bd2);border-radius:16px;padding:12px 18px;transition:transform .3s var(--ease);z-index:9}.toast.on{transform:translate(-50%,0)}
 .modal{position:fixed;inset:0;background:rgba(5,6,9,.8);backdrop-filter:blur(10px);display:none;place-items:center;z-index:20;padding:20px}.modal.on{display:grid}.sheet{width:min(640px,100%);padding:32px}
 </style></head>
@@ -66,6 +74,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
 <button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
 <button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
+<button data-v="monitors"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="12" height="9" rx="2"/><rect x="16" y="9" width="6" height="9" rx="2"/><path d="M6 18h4"/></svg>Monitors</button>
 <button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
 <button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
 <div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
@@ -78,6 +87,16 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <div class="pw" style="left:6%;bottom:12%;width:25%"><div style="font-weight:600">Notes</div><small>Type a note…</small></div></div>
 <div class="scenes" role="radiogroup" aria-label="Choose a scene" id="scenes"></div>
 <div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span> <span class="chip warn" id="pz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="sw" id="motion" role="switch" aria-checked="false" aria-label="Live motion wallpaper (uses more CPU)" title="Live motion wallpaper: uses noticeably more CPU and GPU; pauses in games"></button><span style="font-size:.8125rem;color:var(--mut)">Live motion</span><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
+
+<section class="view" id="v-monitors" aria-labelledby="hm"><div class="eb">Monitors</div><h1 id="hm">Every widget, exactly where you want it.</h1>
+<p class="lede">Your screens as Windows arranges them. Drag a widget onto a monitor, or click a widget and then a monitor. If a monitor is unplugged, its widgets wait on another screen and return by themselves.</p>
+<div class="row mt"><button class="btn" id="midentify">Identify monitors</button><span class="chip" id="mfake" hidden>Test monitors</span></div>
+<div class="mdiag" id="mdiag" role="group" aria-label="Monitor layout"></div>
+<div class="mcards" id="mcards"></div>
+<div class="grid"><div class="card" style="padding:20px"><h2>Widgets</h2><div id="mwidgets" class="mt" style="display:grid;gap:10px"></div></div>
+<div class="card" style="padding:20px"><h2>If a monitor is unplugged</h2><div class="pr"><div class="w"><b>Park widgets on</b><span>They return to their own monitor when it reconnects.</span></div><select id="mfallback" aria-label="Monitor for parked widgets"></select></div>
+<h2 style="margin-top:14px">Recovery</h2><div class="row mt" style="flex-wrap:wrap"><button class="btn" id="mparkall">Bring all widgets to the primary monitor</button><button class="btn g" id="mreset">Reset widget positions</button><button class="btn g" id="mundo" hidden>Undo reset</button></div>
+<p style="color:var(--mut);font-size:.8125rem;margin-top:10px">Bringing widgets to the primary monitor is temporary and never changes where you put them. Reset puts every widget back at its default place, and can be undone.</p></div></div></section>
 
 <section class="view" id="v-security" aria-labelledby="hs"><div class="eb">Security Center</div><h1 id="hs">See what your PC is doing.</h1>
 <p class="lede">A clear look at your protection, what is connected to the internet, what is listening for connections, and what starts with Windows. Plinth reports facts and leaves the judgement to you.</p>
@@ -113,7 +132,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v==null?'':v).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const send=(cmd,a={})=>window.ipc.postMessage(JSON.stringify({cmd,...a}));
-let S=null,open=new Set();const R={scene:null,w:null,wall:null};
+let S=null,open=new Set();const R={scene:null,w:null,wall:null,mon:null};
 const SC={dusk:{name:'Dusk',d:'Warm, calm, low glare',w:'linear-gradient(160deg,#2b1b4d 0%,#5b2a6b 40%,#d9667a 85%,#ffb27a 100%)',m:'radial-gradient(60% 50% at 70% 30%,rgba(255,170,120,.35),transparent 70%)',a:'#ffb27a',i:'#2a1400'},graphite:{name:'Graphite',d:'Matte, focused, no noise',w:'linear-gradient(160deg,#0d0f14 0%,#1a1e2b 55%,#2c3347 100%)',m:'radial-gradient(50% 60% at 25% 70%,rgba(124,242,200,.22),transparent 70%)',a:'#7cf2c8',i:'#04281d'},paper:{name:'Paper',d:'Light, airy, high legibility',w:'linear-gradient(160deg,#e9e4da 0%,#cfd8dc 60%,#b7c4d6 100%)',m:'radial-gradient(55% 55% at 75% 25%,rgba(255,255,255,.7),transparent 70%)',a:'#3b6cff',i:'#ffffff'}};
 function toast(t){$('#toast').textContent=t;$('#toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').classList.remove('on'),4500)}
 function show(v){$$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));$$('#nav button').forEach(b=>{b.dataset.v===v?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')})}
@@ -148,6 +167,7 @@ function render(){
     S.wallpapers.forEach(w=>add(w.id,w.name,(w.kind==='video'?'Video':'Animated page')+(w.bundled?' · Plinth':' · Yours'),w.kind==='video'?'v':'',icon[w.kind]||'',!w.bundled))}
   const cw=S.wallpapers.find(w=>w.id===S.wallpaper);
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
+  renderMon();
   if(S.firstRun)$('#fr').classList.add('on');
 }
 let SEC=null;
@@ -173,6 +193,37 @@ function renderSec(){
 }
 window.__onSecurity=(d)=>{SEC=d;renderSec()};
 $('#sscan').onclick=()=>{$('#sscan').disabled=true;$('#sstat').textContent='Scanning…';send('security_scan')};
+let selW=null,drag=null;
+function sendAssign(w,m){send('assign',{widget:w,monitor:m});selW=null}
+function renderMon(){
+  const M=S.monitors||[];if(!M.length)return;
+  const key=JSON.stringify([S.monitors,S.placements,S.wallpapers,S.fallback,S.parkAll,S.canUndo,selW]);if(R.mon===key)return;R.mon=key;
+  $('#mfake').hidden=!S.fakeMonitors;
+  const minx=Math.min(...M.map(m=>m.x)),miny=Math.min(...M.map(m=>m.y)),maxx=Math.max(...M.map(m=>m.x+m.w)),maxy=Math.max(...M.map(m=>m.y+m.h)),W=maxx-minx,H=maxy-miny;
+  const box=$('#mdiag');box.style.setProperty('--ar',(W/H).toFixed(3));
+  const pct=(v,t)=>(100*v/t).toFixed(3)+'%';
+  box.innerHTML=M.map(m=>{const chips=(S.placements||[]).filter(p=>p.monitor===m.id).map(p=>`<span class="wchip ${p.parked?'parked':''} ${selW===p.widget?'sel':''}" data-w="${esc(p.widget)}" role="button" tabindex="0" aria-label="${esc(p.name)}${p.parked?' (parked, waiting for its monitor)':''}">${esc(p.name)}${p.parked?' ·parked':''}</span>`).join('');
+    return `<div class="mon ${m.primary?'pri':''} ${selW?'target':''}" data-id="${esc(m.id)}" style="left:${pct(m.x-minx,W)};top:${pct(m.y-miny,H)};width:${pct(m.w,W)};height:${pct(m.h,H)}"><span class="mn">${esc(m.name)}${m.primary?' ★':''}</span>${chips}<span class="no">${esc(m.n)}</span></div>`}).join('');
+  $('#mcards').innerHTML=M.map(m=>`<div class="card mcard"><div class="row between"><b>${esc(m.n)} · ${esc(m.name)}</b>${m.primary?'<span class="chip ok">Primary</span>':''}</div>
+    <div class="srow"><span>Resolution</span><span>${esc(m.w)} × ${esc(m.h)} (${m.portrait?'portrait':'landscape'})</span></div><div class="srow"><span>Scale</span><span>${esc(m.scale)}%</span></div><div class="srow"><span>Refresh rate</span><span>${m.hz?esc(m.hz)+' Hz':'unknown'}</span></div>
+    <div class="srow"><span>Wallpaper</span><span><select data-mw="${esc(m.id)}" aria-label="Wallpaper for monitor ${esc(m.n)}"><option value="">Scene background${m.primary?'':' (none)'}</option>${(S.wallpapers||[]).map(w=>`<option value="${esc(w.id)}" ${w.id===m.wallpaper?'selected':''}>${esc(w.name)}</option>`).join('')}</select></span></div></div>`).join('');
+  $$('#mcards select').forEach(el=>el.onchange=()=>send('monitor_wallpaper',{monitor:el.dataset.mw,id:el.value}));
+  $('#mwidgets').innerHTML=(S.placements||[]).map(p=>`<div class="row between"><div><b>${esc(p.name)}</b>${p.parked?' <span class="chip warn">parked: its monitor is not connected</span>':''}${p.clipped?' <span class="chip bad">too big for this monitor</span>':''}</div><select data-wm="${esc(p.widget)}" aria-label="Monitor for ${esc(p.name)}">${p.home==='primary'?`<option value="primary" selected>Primary monitor</option>`:''}${M.map(m=>`<option value="${esc(m.id)}" ${p.home===m.id?'selected':''}>${esc(m.n)} · ${esc(m.name)}</option>`).join('')}${!p.homeConnected&&p.home!=='primary'?`<option value="" selected disabled>Disconnected monitor</option>`:''}</select></div>`).join('');
+  $$('#mwidgets select').forEach(el=>el.onchange=()=>{if(el.value)sendAssign(el.dataset.wm,el.value)});
+  const fb=$('#mfallback');fb.innerHTML=`<option value="">Primary monitor</option>`+M.map(m=>`<option value="${esc(m.id)}" ${S.fallback===m.id?'selected':''}>${esc(m.n)} · ${esc(m.name)}</option>`).join('');fb.onchange=()=>send('fallback',{monitor:fb.value});
+  $('#mparkall').textContent=S.parkAll?'Return widgets to their monitors':'Bring all widgets to the primary monitor';$('#mundo').hidden=!S.canUndo;
+}
+$('#midentify').onclick=()=>send('identify');$('#mparkall').onclick=()=>send('park_all',{on:!S.parkAll});$('#mreset').onclick=()=>send('reset_positions');$('#mundo').onclick=()=>send('undo_positions');
+// Pointer-based drag (HTML5 drag and drop is disabled by the native file-drop handler). A press without movement selects the
+// widget; clicking a monitor then moves it there.
+const mdiag=$('#mdiag');
+mdiag.addEventListener('pointerdown',(e)=>{const c=e.target.closest('.wchip');if(!c)return;drag={w:c.dataset.w,x:e.clientX,y:e.clientY,moved:false,ghost:null};e.preventDefault()});
+document.addEventListener('pointermove',(e)=>{if(!drag)return;if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>5){drag.moved=true;const g=document.createElement('div');g.className='ghost wchip';g.textContent=(S.placements.find(p=>p.widget===drag.w)||{}).name||'';document.body.append(g);drag.ghost=g}
+  if(drag.ghost){drag.ghost.style.left=(e.clientX+8)+'px';drag.ghost.style.top=(e.clientY+8)+'px';const t=document.elementFromPoint(e.clientX,e.clientY);$$('.mon').forEach(m=>m.classList.toggle('over',!!t&&m===t.closest('.mon')))}});
+document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=null;if(d.ghost)d.ghost.remove();$$('.mon').forEach(m=>m.classList.remove('over'));
+  if(d.moved){const t=document.elementFromPoint(e.clientX,e.clientY),m=t&&t.closest('.mon');if(m)sendAssign(d.w,m.dataset.id)}else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
+mdiag.addEventListener('click',(e)=>{if(e.target.closest('.wchip'))return;const m=e.target.closest('.mon');if(m&&selW)sendAssign(selW,m.dataset.id)});
+mdiag.addEventListener('keydown',(e)=>{const c=e.target.closest('.wchip');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selW=selW===c.dataset.w?null:c.dataset.w;R.mon=null;renderMon()}});
 window.__drop=(on)=>document.body.classList.toggle('dropping',!!on);
 window.__onState=(s)=>{const prev=S;S=s;render();if(prev&&s.msg)toast(s.msg)};
 setInterval(()=>{const d=new Date();$('#pt').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},5000);

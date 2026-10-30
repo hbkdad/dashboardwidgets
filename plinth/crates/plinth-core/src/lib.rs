@@ -6,6 +6,7 @@ pub mod context;
 pub mod governor;
 pub mod impact;
 pub mod fit;
+pub mod library;
 pub mod manifest;
 pub mod monitors;
 pub mod security;
