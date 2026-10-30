@@ -1,0 +1,10 @@
+[package]
+name = "plinth-host"
+description = "Plinth widget host logic: packages, origin slots, CSP generation, permission-checked bridge. No GUI code."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+plinth-core = { path = "../plinth-core" }
+serde_json = "1"

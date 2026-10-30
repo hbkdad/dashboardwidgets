@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/plinth-core", "spikes/layer-probe", "spikes/webview-probe", "spikes/sandbox-probe"]
+members = ["crates/plinth-core", "crates/plinth-host", "apps/host-demo", "spikes/layer-probe", "spikes/webview-probe", "spikes/sandbox-probe"]
 
 [workspace.package]
 edition = "2021"

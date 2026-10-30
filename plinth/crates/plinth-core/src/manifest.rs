@@ -120,7 +120,7 @@ struct RawManifest {
     permissions: Vec<RawPermission>,
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     id.len() <= 128
         && id.contains('.')
         && !id.starts_with('.')
@@ -130,7 +130,7 @@ fn valid_id(id: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-')
 }
 
-fn valid_version(v: &str) -> bool {
+pub(crate) fn valid_version(v: &str) -> bool {
     let parts: Vec<&str> = v.split('.').collect();
     parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }

@@ -145,6 +145,29 @@ impl Broker {
         });
     }
 
+    pub fn is_registered(&self, widget: &str) -> bool {
+        self.declared.contains_key(widget)
+    }
+
+    /// Hosts the widget may currently reach: declared `net.fetch` hosts, only if the user granted it and
+    /// Safe mode is off. Does not write to the activity log (used to build the CSP).
+    pub fn granted_fetch_hosts(&self, widget: &str) -> Vec<String> {
+        if self.safe_mode || !self.granted.get(widget).map_or(false, |g| g.contains(&PermissionId::NetFetch)) {
+            return Vec::new();
+        }
+        self.declared
+            .get(widget)
+            .and_then(|d| d.iter().find(|p| p.id == PermissionId::NetFetch))
+            .map(|p| p.hosts.clone())
+            .unwrap_or_default()
+    }
+
+    /// Records a widget-supplied diagnostic note in the activity log (always "allowed", text is truncated).
+    pub fn note(&mut self, widget: &str, text: &str) {
+        let t: String = text.chars().take(200).collect();
+        self.record(widget, format!("note {t}"), Decision::Allowed);
+    }
+
     pub fn activity(&self, widget: &str) -> Vec<&ActivityEntry> {
         self.log.iter().filter(|e| e.widget == widget).collect()
     }
@@ -219,6 +242,29 @@ mod tests {
         b.register(&manifest("com.example.w", r#"[{"id":"storage","reason":"s"}]"#));
         b.register(&manifest("com.example.w", r#"[{"id":"system.cpu","reason":"a"}]"#));
         assert_eq!(b.check("com.example.w", PermissionId::SystemCpu), Decision::Denied(DenyReason::NotGranted));
+    }
+
+    #[test]
+    fn granted_fetch_hosts_requires_grant_and_respects_safe_mode() {
+        let mut b = Broker::new(100);
+        b.register(&manifest("com.example.w", CPU_AND_NET));
+        assert!(b.granted_fetch_hosts("com.example.w").is_empty());
+        b.grant("com.example.w", PermissionId::NetFetch).unwrap();
+        assert_eq!(b.granted_fetch_hosts("com.example.w"), vec!["api.weather.example"]);
+        b.set_safe_mode(true);
+        assert!(b.granted_fetch_hosts("com.example.w").is_empty());
+        assert!(b.granted_fetch_hosts("nope.nope").is_empty());
+        assert!(b.activity("com.example.w").is_empty(), "building a CSP must not log");
+    }
+
+    #[test]
+    fn notes_are_logged_and_truncated() {
+        let mut b = Broker::new(100);
+        b.register(&manifest("com.example.w", "[]"));
+        b.note("com.example.w", &"x".repeat(500));
+        let a = b.activity("com.example.w");
+        assert_eq!(a.len(), 1);
+        assert!(a[0].action.len() <= "note ".len() + 200);
     }
 
     #[test]
