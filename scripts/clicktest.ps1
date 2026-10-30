@@ -8,6 +8,7 @@ $exe = "$root\plinth\target\release\plinth-app.exe"
 $state = Join-Path $env:TEMP "plinth-click-state.json"; $log = Join-Path $env:TEMP "plinth-click-app.txt"
 Remove-Item $state, $log -ErrorAction SilentlyContinue
 $env:PLINTH_STATE = $state
+$env:PLINTH_WEBVIEW = Join-Path $env:TEMP "plinth-click-wv"
 $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-click-walls"; Remove-Item $env:PLINTH_USER_WALLPAPERS -Recurse -Force -ErrorAction SilentlyContinue
 # A small picture library of its own (never the user's real one): 12 generated pictures in a folder the library already knows.
 $fix = Join-Path $env:TEMP "plinth-click-lib"; python "$PSScriptRoot\make-library-fixture.py" $fix 12 | Out-Null
@@ -88,6 +89,18 @@ try {
   Check "Monitors view lists the real monitors with their numbers" (Wait-Until { [bool](Find-Like $w ("1 " + [char]0x00B7 + " *")) } 8)
   Invoke-ByName $w "Identify monitors" | Out-Null
   Check "Identify monitors was handled" (Wait-Until { Select-String -Path $log -Pattern "hub: identify handled" -Quiet } 8)
+  # --- moods and setup cards ---
+  Invoke-ByName $w "Moods" | Out-Null
+  Start-Sleep -Milliseconds 600
+  Check "Moods view shows its heading" (Wait-Until { [bool](Find-ByName $w "Your desktop follows your day.") } 6)
+  Invoke-ByName $w "Switch profiles automatically" | Out-Null
+  Check "turning Moods on was saved" (Wait-Until { $s = St; $s -and $s.moods_on -eq $true } 8)
+  Set-Text $w "Rule name" "Coding" | Out-Null
+  Set-Text $w "Program file name" "code.exe" | Out-Null
+  Invoke-ByName $w "Add rule" | Out-Null
+  Check "adding a rule through the form saved it" (Wait-Until { $s = St; $s -and @($s.mood_rules).Count -eq 1 } 8)
+  Check "the rule is listed in plain language" (Wait-Until { [bool](Find-Like $w "when I am using code.exe*") } 6)
+  Check "Export setup card is available" ([bool](Find-ByName $w "Export setup card"))
   # --- wallpapers ---
   Invoke-ByName $w "Wallpapers" | Out-Null
   Start-Sleep -Milliseconds 600

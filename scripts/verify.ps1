@@ -5,7 +5,7 @@
 # -Click also click-tests the real hub window through UI Automation (about 40 s, shows the desktop layer).
 # Runs unit/socket tests and builds the whole workspace; with -App also runs the app's end-to-end autotest
 # (applies a full-screen desktop layer for ~30 s and sends Win+D; do not run while presenting).
-param([switch]$App, [switch]$Click, [switch]$Monitors, [switch]$Library)
+param([switch]$App, [switch]$Click, [switch]$Monitors, [switch]$Library, [switch]$Moods)
 $ErrorActionPreference = "Stop"
 Push-Location "$PSScriptRoot\..\plinth"
 try {
@@ -16,6 +16,7 @@ try {
   if ($App) {
     $state = Join-Path $env:TEMP "plinth-verify-state.json"
     Remove-Item $state -ErrorAction SilentlyContinue
+    $env:PLINTH_WEBVIEW = Join-Path $env:TEMP "plinth-verify-wv"
     $env:PLINTH_STATE = $state; $env:PLINTH_AUTOTEST = "28"
     # Wallpaper checks use a throwaway user library. Set PLINTH_TEST_VIDEO to an .mp4 (make one with scripts/make-test-video.py)
     # to also test video import, ranged streaming and resume after a pause; without it those two checks pass trivially.
@@ -46,9 +47,19 @@ try {
     Remove-Item Env:PLINTH_AUTOTEST_LIB -ErrorAction SilentlyContinue
     if ($code -ne 0) { throw "library end-to-end test failed (if your wallpaper looks wrong, press Revert in Plinth or read os_snapshot in $($env:PLINTH_STATE))" }
   }
+  if ($Moods) {
+    $env:PLINTH_STATE = Join-Path $env:TEMP "plinth-verify-moods-state.json"; Remove-Item $env:PLINTH_STATE -ErrorAction SilentlyContinue
+    $env:PLINTH_CARDS = Join-Path $env:TEMP "plinth-verify-cards"; Remove-Item $env:PLINTH_CARDS -Recurse -Force -ErrorAction SilentlyContinue
+    $env:PLINTH_LIBRARY = Join-Path $env:TEMP "plinth-verify-moods-lib\library.json"; $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-verify-moods-walls"
+    $env:PLINTH_AUTOTEST = "40"; $env:PLINTH_AUTOTEST_MOODS = "1"
+    & .\target\release\plinth-app.exe
+    $code = $LASTEXITCODE
+    Remove-Item Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_CARDS -ErrorAction SilentlyContinue
+    if ($code -ne 0) { throw "moods and cards test failed" }
+  }
   if ($Click) {
     # the earlier stages set test switches; the click test must start the app normally
-    Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
+    Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
     & "$PSScriptRoot\clicktest.ps1"
     if ($LASTEXITCODE -ne 0) { throw "click test failed" }
   }

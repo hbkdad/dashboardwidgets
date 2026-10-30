@@ -34,6 +34,9 @@ pub struct State {
     pub placements: Vec<plinth_core::monitors::Placement>,
     /// Monitor id widgets park on when their home is unplugged; empty means the primary.
     pub fallback: String,
+    /// Moods: automatic profile switching rules (off until the user turns it on).
+    pub moods_on: bool,
+    pub mood_rules: Vec<plinth_core::context::Rule>,
     /// Static image wallpaper per monitor id (a library item, fit mode and letterbox color).
     pub lib_sel: HashMap<String, Sel>,
     pub slides: HashMap<String, Slide>,
@@ -59,6 +62,11 @@ pub fn local_dir() -> PathBuf {
     base.join("Plinth")
 }
 
+/// Where the hub and layer web views keep their profiles. Tests set PLINTH_WEBVIEW so they never share (or get blocked by) the real one.
+pub fn webview_dir() -> PathBuf {
+    std::env::var_os("PLINTH_WEBVIEW").map(PathBuf::from).unwrap_or_else(local_dir)
+}
+
 fn path() -> PathBuf {
     if let Some(p) = std::env::var_os("PLINTH_STATE") {
         return PathBuf::from(p);
@@ -68,7 +76,7 @@ fn path() -> PathBuf {
 
 impl State {
     pub fn load() -> State {
-        let default = State { scene: "graphite".into(), applied: false, safe: false, motion: false, wallpaper: String::new(), monitor_walls: HashMap::new(), placements: Vec::new(), fallback: String::new(), lib_sel: HashMap::new(), slides: HashMap::new(), scrim: "none".into(), profiles: Default::default(), os_snapshot: None, grants: HashMap::new(), storage: HashMap::new(), first_run: true };
+        let default = State { scene: "graphite".into(), applied: false, safe: false, motion: false, wallpaper: String::new(), monitor_walls: HashMap::new(), placements: Vec::new(), fallback: String::new(), moods_on: false, mood_rules: Vec::new(), lib_sel: HashMap::new(), slides: HashMap::new(), scrim: "none".into(), profiles: Default::default(), os_snapshot: None, grants: HashMap::new(), storage: HashMap::new(), first_run: true };
         let Ok(text) = std::fs::read_to_string(path()) else { return default };
         let Ok(v) = serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')) else { return default }; // tolerate a UTF-8 BOM added by other tools
         let scene = v.get("scene").and_then(Value::as_str).filter(|s| ["dusk", "graphite", "paper"].contains(s)).unwrap_or("graphite").to_string();
@@ -125,7 +133,9 @@ impl State {
                 color: o.get("color")?.as_u64()? as u32,
             })
         });
-        State { scene, wallpaper, monitor_walls, placements, fallback, lib_sel, slides, scrim, profiles, os_snapshot, applied: v.get("applied").and_then(Value::as_bool).unwrap_or(false), safe: v.get("safe").and_then(Value::as_bool).unwrap_or(false), motion: v.get("motion").and_then(Value::as_bool).unwrap_or(false), grants, storage, first_run: false }
+        let moods_on = v.get("moods_on").and_then(Value::as_bool).unwrap_or(false);
+        let mood_rules = v.get("mood_rules").and_then(Value::as_array).map(|a| a.iter().filter_map(|r| plinth_core::context::rule_from_json(r).ok()).take(32).collect()).unwrap_or_default();
+        State { scene, wallpaper, monitor_walls, placements, fallback, moods_on, mood_rules, lib_sel, slides, scrim, profiles, os_snapshot, applied: v.get("applied").and_then(Value::as_bool).unwrap_or(false), safe: v.get("safe").and_then(Value::as_bool).unwrap_or(false), motion: v.get("motion").and_then(Value::as_bool).unwrap_or(false), grants, storage, first_run: false }
     }
 
     pub fn save(&self) {
@@ -133,7 +143,7 @@ impl State {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let v = json!({ "version": 1, "scene": self.scene, "applied": self.applied, "safe": self.safe, "motion": self.motion, "wallpaper": self.wallpaper, "monitor_walls": self.monitor_walls, "placements": self.placements, "fallback": self.fallback, "lib_sel": self.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(), "slides": self.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>(), "scrim": self.scrim, "profiles": self.profiles, "os_snapshot": self.os_snapshot.as_ref().map(|o| json!({ "wallpapers": o.wallpapers.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(), "position": o.position, "color": o.color })), "grants": self.grants, "storage": self.storage });
+        let v = json!({ "version": 1, "scene": self.scene, "applied": self.applied, "safe": self.safe, "motion": self.motion, "wallpaper": self.wallpaper, "monitor_walls": self.monitor_walls, "placements": self.placements, "fallback": self.fallback, "moods_on": self.moods_on, "mood_rules": self.mood_rules.iter().map(plinth_core::context::rule_to_json).collect::<Vec<_>>(), "lib_sel": self.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(), "slides": self.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>(), "scrim": self.scrim, "profiles": self.profiles, "os_snapshot": self.os_snapshot.as_ref().map(|o| json!({ "wallpapers": o.wallpapers.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(), "position": o.position, "color": o.color })), "grants": self.grants, "storage": self.storage });
         write_atomic(&p, &serde_json::to_vec_pretty(&v).unwrap_or_default());
     }
 }

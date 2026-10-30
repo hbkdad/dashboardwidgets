@@ -89,6 +89,7 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
 <button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
 <button data-v="monitors"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="12" height="9" rx="2"/><rect x="16" y="9" width="6" height="9" rx="2"/><path d="M6 18h4"/></svg>Monitors</button>
+<button data-v="moods"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M8 3.5l-2 2M16 3.5l2 2"/></svg>Moods</button>
 <button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
 <button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
 <div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
@@ -131,6 +132,27 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="card" style="padding:20px"><h2>Profiles</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">Save wallpapers, widgets and monitor assignments together, and restore them in one click.</p><div class="fld"><input type="text" id="pname" maxlength="40" placeholder="Name, for example Work" aria-label="Profile name"><button class="btn" id="psave">Save profile</button></div><div id="plist" class="mt" style="display:grid;gap:8px"></div></div></div>
 <div class="bar"><div><b id="wn">None</b> <span class="chip" id="wcost">…</span> <span class="chip ok" id="wap" hidden>Applied</span> <span class="chip warn" id="wpz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="btn g" id="rev2" disabled>Revert</button><button class="btn p" id="apply2">Apply to my desktop</button></div></div></section>
 
+<section class="view" id="v-moods" aria-labelledby="hmo"><div class="eb">Moods and setups</div><h1 id="hmo">Your desktop follows your day.</h1>
+<p class="lede">Moods switch between your saved profiles by rules you write: the program you are using, a fullscreen game, battery, or the time of day. Plinth never fights a choice you make by hand, and it only suggests a rule after you repeat the same choice.</p>
+<div class="card" style="padding:20px;margin-top:22px"><div class="row between"><div class="row"><button class="sw" id="mtoggle" role="switch" aria-checked="false" aria-label="Switch profiles automatically"></button><b>Switch profiles automatically</b></div><span class="chip" id="mcur">No mood active</span></div>
+<div id="msug" hidden class="note" style="margin-top:14px"><b id="msugt"></b> <div class="row mt"><button class="btn p" id="msugy">Make it automatic</button><button class="btn g" id="msugn">Not now</button></div></div></div>
+<div class="grid"><div class="card" style="padding:20px"><h2>Rules</h2><div id="mrules" class="mt" style="display:grid;gap:8px"></div>
+<h2 style="margin-top:20px">Add a rule</h2>
+<div class="fld"><label for="mrname">Name</label><input type="text" id="mrname" maxlength="40" placeholder="Coding" aria-label="Rule name"></div>
+<div class="fld"><label for="mkind">When</label><select id="mkind" aria-label="Rule condition"><option value="app">I am using a program</option><option value="fullscreen">A fullscreen app or game is open</option><option value="battery">My PC is on battery</option><option value="time">It is between two times</option></select></div>
+<div class="fld" id="mf-app"><label for="mval">Program file</label><input type="text" id="mval" maxlength="64" placeholder="code.exe" aria-label="Program file name"></div>
+<div class="fld" id="mf-time" hidden><label for="mfrom">From</label><input type="time" id="mfrom" value="22:00" aria-label="From time"><label for="mto" style="min-width:0">to</label><input type="time" id="mto" value="06:00" aria-label="To time"></div>
+<div class="fld"><label for="mprof">Use profile</label><select id="mprof" aria-label="Profile for this rule"></select></div>
+<div class="row mt"><button class="btn p" id="mradd">Add rule</button></div>
+<p style="color:var(--mut);font-size:.8125rem;margin-top:8px">Profiles are saved on the Wallpapers page. The first matching rule wins; there is a two minute pause between switches so nothing flickers.</p></div>
+<div class="card" style="padding:20px"><h2>Share your setup</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A setup card holds your scene and where each widget sits, as fractions of each monitor. No code, no monitor ids, no personal data, and it never grants permissions.</p>
+<div class="fld"><input type="text" id="cname" maxlength="40" placeholder="Name your setup" aria-label="Setup card name"><button class="btn" id="cexport">Export setup card</button></div>
+<h2 style="margin-top:20px">Use someone else's setup</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">Drop a .plinthcard file on this window, or choose one. You see what it needs before anything changes.</p>
+<div class="row mt"><button class="btn" id="cimport">Choose a setup card…</button></div></div></div></section>
+
+<div class="modal" id="cardm" role="dialog" aria-modal="true" aria-labelledby="cardt"><div class="card sheet"><div class="eb">Setup card</div><h1 id="cardt" style="font-size:1.8rem"></h1><div id="cardb" class="mt"></div>
+<div class="row between mt"><button class="btn g" id="cardno">Cancel</button><button class="btn p" id="cardyes">Apply this setup</button></div></div></div>
+
 <section class="view" id="v-safety" aria-labelledby="h2"><div class="eb">Safety · Permission Center</div><h1 id="h2">See everything. Revoke anything.</h1>
 <p class="lede">Widgets can only use what they declared and you allowed. Every request is logged, including the ones that were blocked.</p>
 <div class="grid"><div class="card" id="wl" style="padding:4px 0"></div>
@@ -153,7 +175,7 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v==null?'':v).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const send=(cmd,a={})=>window.ipc.postMessage(JSON.stringify({cmd,...a}));
-let S=null,open=new Set();const R={scene:null,w:null,wall:null,mon:null};
+let S=null,open=new Set();const R={scene:null,w:null,wall:null,mon:null,moods:null};
 const SC={dusk:{name:'Dusk',d:'Warm, calm, low glare',w:'linear-gradient(160deg,#2b1b4d 0%,#5b2a6b 40%,#d9667a 85%,#ffb27a 100%)',m:'radial-gradient(60% 50% at 70% 30%,rgba(255,170,120,.35),transparent 70%)',a:'#ffb27a',i:'#2a1400'},graphite:{name:'Graphite',d:'Matte, focused, no noise',w:'linear-gradient(160deg,#0d0f14 0%,#1a1e2b 55%,#2c3347 100%)',m:'radial-gradient(50% 60% at 25% 70%,rgba(124,242,200,.22),transparent 70%)',a:'#7cf2c8',i:'#04281d'},paper:{name:'Paper',d:'Light, airy, high legibility',w:'linear-gradient(160deg,#e9e4da 0%,#cfd8dc 60%,#b7c4d6 100%)',m:'radial-gradient(55% 55% at 75% 25%,rgba(255,255,255,.7),transparent 70%)',a:'#3b6cff',i:'#ffffff'}};
 function toast(t){$('#toast').textContent=t;$('#toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').classList.remove('on'),4500)}
 function show(v){$$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));$$('#nav button').forEach(b=>{b.dataset.v===v?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')})}
@@ -190,6 +212,7 @@ function render(){
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
   renderMon();
   renderLibState();
+  renderMoods();
   if(S.firstRun)$('#fr').classList.add('on');
 }
 let SEC=null;
@@ -247,6 +270,26 @@ document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=nu
   if(d.moved){const t=document.elementFromPoint(e.clientX,e.clientY),m=t&&t.closest('.mon');if(m)sendAssign(d.w,m.dataset.id)}else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
 mdiag.addEventListener('click',(e)=>{if(e.target.closest('.wchip'))return;const m=e.target.closest('.mon');if(m&&selW)sendAssign(selW,m.dataset.id)});
 mdiag.addEventListener('keydown',(e)=>{const c=e.target.closest('.wchip');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selW=selW===c.dataset.w?null:c.dataset.w;R.mon=null;renderMon()}});
+
+// ---------------- Moods and setup cards
+function renderMoods(){const m=S.moods;if(!m)return;
+  const key=JSON.stringify([m,S.profiles,S.card]);if(R.moods===key)return;R.moods=key;
+  $('#mtoggle').setAttribute('aria-checked',m.on);$('#mcur').textContent=m.current?'Profile now: '+m.current:'No mood active';
+  $('#msug').hidden=!m.suggestion;if(m.suggestion)$('#msugt').textContent='You keep choosing "'+m.suggestion.profile+'" '+m.suggestion.text+'. Make that automatic?';
+  $('#mrules').innerHTML=m.rules.map(r=>`<div class="row between"><div><b>${esc(r.name)}</b><div style="color:var(--mut);font-size:.8125rem">${esc(r.text)} → ${esc(r.profile)}${r.exists?'':' <span class="chip warn">profile missing</span>'}</div></div><button class="btn g" data-rm="${esc(r.name)}" aria-label="Remove rule ${esc(r.name)}">Remove</button></div>`).join('')||'<span style="color:var(--mut);font-size:.8125rem">No rules yet. Add one below.</span>';
+  $$('#mrules [data-rm]').forEach(b=>b.onclick=()=>send('mood_remove',{name:b.dataset.rm}));
+  const ps=S.profiles||[];$('#mprof').innerHTML=ps.length?ps.map(n=>`<option>${esc(n)}</option>`).join(''):'<option value="">Save a profile first</option>';
+  const c=S.card,mod=$('#cardm');mod.classList.toggle('on',!!c);
+  if(c){$('#cardt').textContent=c.name;const pr=Object.entries(c.permissions||{});
+    $('#cardb').innerHTML=`<div style="color:var(--mut)">By ${esc(c.author)} · ${esc(c.widgets)} widgets on ${esc(c.monitors)} monitor${c.monitors>1?'s':''} · scene ${esc(c.scene)}${c.monitors>c.haveMonitors?`<br>You have ${esc(c.haveMonitors)} monitor${c.haveMonitors>1?'s':''}; the rest land on your primary.`:''}</div>
+    ${c.missing.length?`<div class="note"><b>Not installed, so skipped:</b> ${c.missing.map(esc).join(', ')}</div>`:''}
+    <div class="mt"><b>Permissions these widgets can ask for</b> <span style="color:var(--mut);font-size:.8125rem">(nothing is allowed automatically; you decide in Safety)</span>${pr.length?pr.map(([k,v])=>`<div class="srow"><span>${esc(k)}</span><span>${v.map(esc).join(', ')}</span></div>`).join(''):'<div class="srow"><span>None</span><span></span></div>'}${(c.hosts||[]).length?`<div style="color:var(--mut);font-size:.8125rem;margin-top:6px">Internet hosts: ${c.hosts.map(esc).join(', ')}</div>`:''}</div>`}}
+$('#mtoggle').onclick=()=>send('moods_toggle',{on:!(S.moods&&S.moods.on)});
+$('#mkind').onchange=()=>{const k=$('#mkind').value;$('#mf-app').hidden=k!=='app';$('#mf-time').hidden=k!=='time'};
+$('#mradd').onclick=()=>{const k=$('#mkind').value,when={kind:k};if(k==='app')when.value=$('#mval').value;if(k==='time'){when.from=$('#mfrom').value;when.to=$('#mto').value}send('mood_add',{rule:{name:$('#mrname').value||({app:$('#mval').value,fullscreen:'Fullscreen',battery:'On battery',time:'Time of day'})[k],when,profile:$('#mprof').value}})};
+$('#msugy').onclick=()=>send('mood_accept');$('#msugn').onclick=()=>send('mood_dismiss');
+$('#cexport').onclick=()=>send('card_export',{name:$('#cname').value||'My setup'});$('#cimport').onclick=()=>send('card_pick');
+$('#cardyes').onclick=()=>send('card_apply');$('#cardno').onclick=()=>send('card_cancel');
 
 // ---------------- wallpaper library (virtualized grid, thumbnails from the thumbnail origin)
 const L={q:'',filter:'all',total:0,pages:new Map(),pend:new Set(),token:0,sel:null,cols:1,cw:200,rowH:190,gap:12,raf:0,rev:-1};const PAGE=60;

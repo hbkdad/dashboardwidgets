@@ -39,6 +39,10 @@ extern "system" {
     fn GetSystemPowerStatus(s: *mut [u8; 12]) -> i32;
     fn CreateMutexW(attrs: *const c_void, initial_owner: i32, name: *const u16) -> isize;
     fn GetLastError() -> u32;
+    fn GetLocalTime(t: *mut [u16; 8]);
+    fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+    fn CloseHandle(h: isize) -> i32;
+    fn QueryFullProcessImageNameW(h: isize, flags: u32, name: *mut u16, len: *mut u32) -> i32;
     fn CreateEventW(attrs: *const c_void, manual_reset: i32, initial: i32, name: *const u16) -> isize;
     fn SetEvent(h: isize) -> i32;
     fn WaitForSingleObject(h: isize, ms: u32) -> u32;
@@ -216,5 +220,40 @@ pub fn hub_visible() -> bool {
     unsafe {
         let h = FindWindowW(null(), w("Plinth").as_ptr());
         h != 0 && IsWindowVisible(h) != 0
+    }
+}
+
+/// Minutes since local midnight.
+pub fn minute_of_day() -> u16 {
+    let mut t = [0u16; 8];
+    unsafe { GetLocalTime(&mut t) };
+    (t[4].min(23)) * 60 + t[5].min(59)
+}
+
+/// File name (lower case) of the program that owns the foreground window; empty for Plinth itself, the desktop or when unreadable.
+pub fn foreground_app() -> String {
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg == 0 {
+            return String::new();
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(fg, &mut pid);
+        if pid == 0 || pid == std::process::id() {
+            return String::new();
+        }
+        let h = OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+        if h == 0 {
+            return String::new();
+        }
+        let mut buf = vec![0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, 0, buf.as_mut_ptr(), &mut len) != 0;
+        CloseHandle(h);
+        if !ok {
+            return String::new();
+        }
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        path.rsplit(['\\', '/']).next().unwrap_or("").to_ascii_lowercase()
     }
 }

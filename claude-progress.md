@@ -1,6 +1,9 @@
 # Progress log (update at the end of every work session)
 
-## State as of 2026-10-30 (v0.10.0)
+## State as of 2026-10-30 (v0.11.0)
+- v0.11.0: Moods and setup cards (D34). Next: name clearance, signed installer, installer-level testing on a clean machine, Builds showcase, store design; hardware cases still NOT TESTED (docks, mixed DPI, virtual desktops).
+
+## Earlier state (v0.10.x)
 - v0.10.0: monitors (per-monitor layers, assignment, reconcile, parking, recovery) and the picture wallpaper library (folders, scan, thumbnails, dedupe, fit, slideshow, OS wallpaper per monitor, Revert, profiles, shading). This PC has TWO monitors (primary 1920x1080 and a 1280x400 case screen); real tests used both.
 - Tests: 80 core, 14 app, 24 host, 8 proxy; autotest 20/20; fake-monitor lifecycle 13/13; library end to end 10/10; click test 50 checks. Run everything: `scripts/verify.ps1 -App -Monitors -Library -Click`.
 - v0.10.1: copies of a widget (own storage and place, shared permissions).
