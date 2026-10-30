@@ -15,3 +15,14 @@ Other products seen in the same search (names to stay away from): DeskLayer (Ste
 
 ## Recommendation
 Shortlist **Rigdeck** and **Tessel** for a formal clearance, with **Casemark** as a backup. Rigdeck fits the PC-builder audience (D16) and had zero hits; Tessel is short and neutral. Do not change code or the repo name until one is cleared. Cost to rename later is small: the name appears in the window title, tray tooltip, folder names under `%APPDATA%` and `%LOCALAPPDATA%`, the single-instance mutex, and the docs.
+
+## Availability checks (2026-10-30, DNS and package registries; FACT as observed, not a registrar check)
+| Name | .com | .io | .app | .dev | .net | crates.io | npm |
+|---|---|---|---|---|---|---|---|
+| Rigdeck | resolves (registered) | resolves | resolves | no DNS record | no DNS record | free | free |
+| Tessel | registered | registered | registered | registered | registered | taken | taken |
+
+"No DNS record" does not prove a domain is for sale: a registered domain without DNS also looks like this. Check a registrar before relying on it. The three Rigdeck domains that resolve may be parked or in use (not visited).
+
+## Decision recommended
+**Rigdeck** is the better candidate: no software hits, free package names, and `.dev`/`.net` possibly available; Tessel is taken almost everywhere. Next steps before any rename: (1) a formal trademark search for Rigdeck in the US, EU and Australia in the software and online-services classes, (2) confirm `rigdeck.dev` (or another) at a registrar, (3) check what the three resolving domains are. Until then the repo, window title and docs keep the codename.
