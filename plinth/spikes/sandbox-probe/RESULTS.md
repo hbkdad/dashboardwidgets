@@ -48,3 +48,31 @@ Memory bombs, WebGL/GPU abuse, clipboard/camera/geolocation prompts (skipped to 
 
 ## Verdict
 Spike C: **the sandbox attribute alone is insufficient; sandbox + generated CSP + host `frame-src` held against every network channel tried, and storage/DOM isolation held. Availability (CPU starvation) is NOT contained.** Exit criterion "0 escapes" met only for the combined configuration and only for the listed attacks; the starvation finding means process isolation or a watchdog is a requirement, not an option.
+
+---
+
+# Update: per-widget origin via custom protocol (`--delivery protocol`)
+
+Branch `spike/origin-isolation`. Widgets are served by the host through wry custom protocols (`http://pwa.localhost`, `pwb`, `pwc`), **one origin per widget**, with the CSP delivered as an **HTTP response header** (`default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'`) that the widget cannot modify. Iframes use `sandbox="allow-scripts allow-same-origin"` (real origin, no opaque origin). The host page CSP is `frame-src http://pwa.localhost http://pwb.localhost http://pwc.localhost`. Run: `cargo run --release -p sandbox-probe -- --delivery protocol`.
+
+## Results (OBSERVED)
+| Test | Result |
+|---|---|
+| Attack suite (P1) from origin pwa | **0 requests reached the local server.** fetch, XHR, image, WebSocket, remote `import()`, remote `<script>`, file fetch all blocked; `sendBeacon` returned true but no request arrived; form POST made no request |
+| Self-navigation exfil (P2) | **No request arrived** (host `frame-src` allowlist) |
+| Starvation: hog (busy loop 3 s) on pwa vs victim on pwb, bystander on pwc, and host | **Not starved in 5 of 5 runs**: host timer max gap 63-64 ms, victim/bystander 63-64 ms (expected ~50). Compare srcdoc delivery: 3000+ ms in 7 of 8 runs |
+| Direct `window.ipc` call from the iframe | 0 messages reached Rust (as before); objects still exposed |
+| Cookie read | allowed (empty) under a real origin; `localStorage` still raised SecurityError here; storage must still be provided by the host API |
+
+## Cost (OBSERVED, single runs; includes a PowerShell measurement process in the tree, so absolute numbers are inflated by a constant, deltas are meaningful)
+| State | Processes | Private |
+|---|---|---|
+| Host page only | 9 | 222 MB |
+| + 2 widgets on 2 origins | 11 | 280 MB |
+So **about +1 process and +29 MB private per extra origin** (compare about 2.5 MB per widget as srcdoc iframes in Spike B). Ten isolated widgets would be roughly +290 MB, which breaks the ~200 MB budget.
+
+## Conclusions
+1. Origin-per-widget delivery from a host-controlled custom protocol with a header CSP and an allowlisted host `frame-src` **closed every network channel tested and contained the CPU hog** in this setup. This is the recommended delivery for **third-party** widgets.
+2. It costs about 29 MB and one process per widget, so use a **hybrid**: first-party/bundled widgets share one trusted origin (cheap); third-party widgets get their own origin; cap concurrent third-party widgets (a soft limit around 5-8 per monitor) and show the memory cost in the Permission Center.
+3. The Permission Center and Safe mode must still live outside the widget host (separate window/process); the host-page timer was unaffected here, but only five runs and one attack pattern were tested.
+4. Remaining unknowns: why the srcdoc/opaque-origin frames shared a renderer while origin-keyed frames did not (assumed site isolation; UNVERIFIED), memory bombs, GPU abuse, many origins at scale, whether Chromium merges processes under memory pressure, custom-protocol behavior on other WebView2 versions.

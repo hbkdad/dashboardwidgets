@@ -11,8 +11,11 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 ### Findings
 - Sandboxed iframe alone leaks network and remote code; sandbox + generated CSP + host `frame-src about:` blocked every tested channel.
 - A busy-loop widget starves the host and other widgets (7 of 8 runs); no CPU watchdog exists.
+- Per-widget origin delivery (custom protocol, header CSP, host `frame-src`): 0 leaked requests, hog contained 5/5, about +29 MB and +1 process per widget.
+### Decisions recorded
+- Hybrid widget delivery: first-party shared origin, third-party one origin each (replaces srcdoc for third-party).
 ### Known open items
-- Per-widget origin or process isolation, memory-bomb test, CPU watchdog design not yet tested.
+- Memory-bomb and GPU abuse tests, high widget counts, and wiring the permission broker into the real host are not done.
 
 ## [0.0.1] - 2026-10-30
 Baseline: research, design, and first engineering spikes.

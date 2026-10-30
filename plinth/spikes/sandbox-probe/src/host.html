@@ -83,7 +83,38 @@ window.addEventListener('message', (e) => {
 const waitFor = (id, ms) => new Promise((res) => { waits[id] = res; setTimeout(res, ms); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const DELIVERY = '__DELIVERY__';
+async function runProtocol() {
+  await sleep(500);
+  send({ kind: 'MEASURE', label: 'host only, no widgets' });
+  const mk = (id, mode, scheme) => {
+    const f = document.createElement('iframe');
+    // allow-same-origin: each widget gets its REAL origin (http://pwX.localhost), isolated by origin, not opaque.
+    f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    f.style.cssText = 'width:160px;height:50px';
+    f.src = 'http://' + scheme + '.localhost/?id=' + encodeURIComponent(id) + '&mode=' + mode + '&port=' + P;
+    document.body.appendChild(f); return f;
+  };
+  let f = mk('P1-protocol+CSP-header', 'attack', 'pwa');
+  await waitFor('P1-protocol+CSP-header', 12000); await sleep(1500); f.remove();
+  f = mk('P2-selfnav', 'selfnav', 'pwa');
+  await waitFor('P2-selfnav', 3000); await sleep(2000); f.remove();
+  let maxGap = 0, last = performance.now();
+  const hb = setInterval(() => { const n = performance.now(); maxGap = Math.max(maxGap, n - last); last = n; }, 50);
+  const victim = mk('P3-victim-heartbeat', 'hb', 'pwb');
+  const bystander = mk('P3-bystander-heartbeat', 'hb', 'pwc');
+  await sleep(2500);
+  send({ kind: 'MEASURE', label: '2 widgets on 2 origins loaded' });
+  const hog = mk('P3-hog', 'starve', 'pwa');
+  await waitFor('P3-victim-heartbeat', 9000); await sleep(500);
+  clearInterval(hb);
+  send({ kind: 'starvation', host_timer_max_gap_ms: Math.round(maxGap), expected_gap_ms: 50, busy_loop_ms: 3000 });
+  send({ kind: 'MEASURE', label: '3 widgets on 3 origins (after hog)' });
+  victim.remove(); bystander.remove(); hog.remove();
+  send({ kind: 'ALLDONE' });
+}
 (async () => {
+  if (DELIVERY === 'protocol') { await runProtocol(); return; }
   await sleep(500);
   // V1: sandbox only
   let f = makeFrame('V1-sandbox-only', 'attack', 'allow-scripts', '');
