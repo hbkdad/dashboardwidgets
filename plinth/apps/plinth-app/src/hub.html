@@ -90,6 +90,7 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
 <button data-v="monitors"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="12" height="9" rx="2"/><rect x="16" y="9" width="6" height="9" rx="2"/><path d="M6 18h4"/></svg>Monitors</button>
 <button data-v="moods"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M8 3.5l-2 2M16 3.5l2 2"/></svg>Moods</button>
+<button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Settings</button>
 <button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
 <button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
 <div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
@@ -153,6 +154,10 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="modal" id="cardm" role="dialog" aria-modal="true" aria-labelledby="cardt"><div class="card sheet"><div class="eb">Setup card</div><h1 id="cardt" style="font-size:1.8rem"></h1><div id="cardb" class="mt"></div>
 <div class="row between mt"><button class="btn g" id="cardno">Cancel</button><button class="btn p" id="cardyes">Apply this setup</button></div></div></div>
 
+<section class="view" id="v-settings" aria-labelledby="hst"><div class="eb">Settings</div><h1 id="hst">Make it yours.</h1>
+<div class="card" style="padding:20px;margin-top:22px"><div class="pr"><div class="w"><b>Start with Windows</b><span>Plinth starts quietly in the tray when you sign in. Your wallpaper and widgets come back by themselves.</span></div><button class="sw" id="autostart" role="switch" aria-checked="false" aria-label="Start Plinth with Windows"></button></div></div>
+<div class="card" style="padding:20px;margin-top:14px"><h2>About</h2><div class="srow"><span>Version</span><span id="aver">…</span></div><div class="srow"><span>Licence</span><span>Apache-2.0</span></div><div class="srow"><span>Name</span><span>Plinth is a working name</span></div><div class="srow"><span>Signing</span><span>This build is not code-signed</span></div></div></section>
+
 <section class="view" id="v-safety" aria-labelledby="h2"><div class="eb">Safety · Permission Center</div><h1 id="h2">See everything. Revoke anything.</h1>
 <p class="lede">Widgets can only use what they declared and you allowed. Every request is logged, including the ones that were blocked.</p>
 <div class="grid"><div class="card" id="wl" style="padding:4px 0"></div>
@@ -212,7 +217,7 @@ function render(){
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
   renderMon();
   renderLibState();
-  renderMoods();
+  renderMoods();renderSettings();
   if(S.firstRun)$('#fr').classList.add('on');
 }
 let SEC=null;
@@ -284,6 +289,8 @@ function renderMoods(){const m=S.moods;if(!m)return;
     $('#cardb').innerHTML=`<div style="color:var(--mut)">By ${esc(c.author)} · ${esc(c.widgets)} widgets on ${esc(c.monitors)} monitor${c.monitors>1?'s':''} · scene ${esc(c.scene)}${c.monitors>c.haveMonitors?`<br>You have ${esc(c.haveMonitors)} monitor${c.haveMonitors>1?'s':''}; the rest land on your primary.`:''}</div>
     ${c.missing.length?`<div class="note"><b>Not installed, so skipped:</b> ${c.missing.map(esc).join(', ')}</div>`:''}
     <div class="mt"><b>Permissions these widgets can ask for</b> <span style="color:var(--mut);font-size:.8125rem">(nothing is allowed automatically; you decide in Safety)</span>${pr.length?pr.map(([k,v])=>`<div class="srow"><span>${esc(k)}</span><span>${v.map(esc).join(', ')}</span></div>`).join(''):'<div class="srow"><span>None</span><span></span></div>'}${(c.hosts||[]).length?`<div style="color:var(--mut);font-size:.8125rem;margin-top:6px">Internet hosts: ${c.hosts.map(esc).join(', ')}</div>`:''}</div>`}}
+function renderSettings(){$('#autostart').setAttribute('aria-checked',!!S.autostart);$('#aver').textContent=S.version||''}
+$('#autostart').onclick=()=>send('autostart',{on:!S.autostart});
 $('#mtoggle').onclick=()=>send('moods_toggle',{on:!(S.moods&&S.moods.on)});
 $('#mkind').onchange=()=>{const k=$('#mkind').value;$('#mf-app').hidden=k!=='app';$('#mf-time').hidden=k!=='time'};
 $('#mradd').onclick=()=>{const k=$('#mkind').value,when={kind:k};if(k==='app')when.value=$('#mval').value;if(k==='time'){when.from=$('#mfrom').value;when.to=$('#mto').value}send('mood_add',{rule:{name:$('#mrname').value||({app:$('#mval').value,fullscreen:'Fullscreen',battery:'On battery',time:'Time of day'})[k],when,profile:$('#mprof').value}})};

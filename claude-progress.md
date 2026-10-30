@@ -1,6 +1,9 @@
 # Progress log (update at the end of every work session)
 
-## State as of 2026-10-30 (v0.11.0)
+## State as of 2026-10-30 (v0.12.0)
+- v0.12.0: packaging (`scripts/package.ps1`) and Start with Windows. Not published: the zip is unsigned. Next: name clearance, code-signing certificate, clean-machine install test, Builds showcase, store design.
+
+## Earlier state (v0.11.0)
 - v0.11.0: Moods and setup cards (D34). Next: name clearance, signed installer, installer-level testing on a clean machine, Builds showcase, store design; hardware cases still NOT TESTED (docks, mixed DPI, virtual desktops).
 
 ## Earlier state (v0.10.x)

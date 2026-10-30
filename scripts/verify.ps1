@@ -62,6 +62,8 @@ try {
     Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
     & "$PSScriptRoot\clicktest.ps1"
     if ($LASTEXITCODE -ne 0) { throw "click test failed" }
+    & "$PSScriptRoot\backgroundtest.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "background start test failed" }
   }
   Write-Host "VERIFY OK"
 } finally { Pop-Location }
