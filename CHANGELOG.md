@@ -3,6 +3,16 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Added
+- `plinth-host` crate: widget packages, 8 isolated origin slots, per-widget CSP generated from manifest and grants, permission-checked bridge with storage quotas (11 tests).
+- `plinth-core::setup` (Setup Cards: validation, permission summary, monitor fitting), `::context` (Moods engine and suggestion learner), `::impact` (Impact Meter), broker helpers `granted_fetch_hosts`, `note`, `is_registered` (27 core tests).
+- Hub prototype `design/prototype/index.html` and `design/ux-flows.md`: scenes with live parallax stage, Safety/Permission Center, Library with permission-diff updates, Remix, Settings, first-run, plus Moods, Share setup, Edit layout, Impact chips.
+- `research/consumer-demand.md`; `design/tooling-plan.md`; project skills `.claude/skills/plinth-{research,spike,widget-security}`.
+### Changed
+- PRD revised with consumer-driven features M11-M14 and a new pitch (design/product-requirements.md §1.0).
+### Decisions recorded
+- Pitch broadened from "safe widgets" to "make it yours, share it in one click, keep it cheap on your PC, and know it is safe".
+- Plugins: A11y Enforcer enabled by the user; Rust CLI Skills offered but not confirmed enabled.
 
 ## [0.1.0] - 2026-10-30
 Phase 0 spikes A, B and C run. Milestone: the sandbox and window-layer approach is validated on one machine; budgets revised.

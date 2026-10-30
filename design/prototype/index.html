@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plinth Hub (design prototype)</title>
+<style>
+/* ============ TOKENS (single source; see design/ux-flows.md) ============ */
+:root{
+  --bg:#0b0c0f; --surface-1:#12141a; --surface-2:#1a1d26; --surface-3:#242836;
+  --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16);
+  --text:#eef0f6; --text-muted:#9aa1b5; --text-faint:#8a91ab;
+  --signal:#7cf2c8; --signal-ink:#04281d; --amber:#ffb454; --danger:#ff6b6b; --info:#8ab4ff;
+  --accent:var(--signal);
+  --r-s:8px; --r-m:14px; --r-l:22px; --r-xl:30px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px; --sp-7:48px;
+  --shadow-1:0 1px 0 rgba(255,255,255,.04) inset, 0 8px 24px rgba(0,0,0,.35);
+  --shadow-2:0 1px 0 rgba(255,255,255,.06) inset, 0 24px 64px rgba(0,0,0,.55);
+  --dur-fast:150ms; --dur-base:300ms; --dur-slow:600ms;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  --font-display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --mono:"Cascadia Mono",ui-monospace,Consolas,monospace;
+  --ui-scale:1;
+}
+[data-contrast="high"]{--border:rgba(255,255,255,.35);--text-muted:#cfd4e6;--text-faint:#b3b9d0;--surface-2:#1f2330}
+[data-motion="reduce"] *,[data-motion="reduce"] *::before,[data-motion="reduce"] *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+*{box-sizing:border-box;margin:0}
+html{font-size:calc(16px*var(--ui-scale))}
+body{background:radial-gradient(1200px 700px at 78% -10%,#1b2340 0%,transparent 60%),radial-gradient(900px 600px at -10% 110%,#10281f 0%,transparent 55%),var(--bg);color:var(--text);font:400 .9375rem/1.5 var(--font);min-height:100vh;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:12px;top:-60px;background:var(--accent);color:var(--signal-ink);padding:8px 14px;border-radius:8px;z-index:100;font-weight:600}
+.skip:focus{top:12px}
+
+/* ============ SHELL ============ */
+.app{display:grid;grid-template-columns:86px 1fr;min-height:100vh;gap:0}
+.rail{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;align-items:center;gap:var(--sp-2);padding:var(--sp-5) 0;border-right:1px solid var(--border);background:linear-gradient(180deg,rgba(18,20,26,.85),rgba(11,12,15,.6));backdrop-filter:blur(18px)}
+.logo{width:42px;height:42px;border-radius:14px;background:conic-gradient(from 210deg,var(--signal),#5b8cff,#b48cff,var(--signal));display:grid;place-items:center;margin-bottom:var(--sp-4);box-shadow:0 0 0 1px var(--border-strong),0 10px 30px rgba(124,242,200,.18)}
+.logo i{width:16px;height:16px;border-radius:5px;background:var(--bg);display:block}
+.nav{display:flex;flex-direction:column;gap:6px;width:100%;align-items:center}
+.nav button{width:62px;padding:10px 0 8px;border:0;background:transparent;border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--text-muted);font-size:.6875rem;transition:background var(--dur-fast),color var(--dur-fast),transform var(--dur-base) var(--ease)}
+.nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.nav button:hover{background:var(--surface-2);color:var(--text)}
+.nav button[aria-current="page"]{background:var(--surface-3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.nav button[aria-current="page"] svg{color:var(--accent)}
+.nav .badge{position:absolute;margin:-6px 0 0 22px;min-width:16px;height:16px;border-radius:8px;background:var(--amber);color:#2a1a00;font-size:.625rem;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.rail .spacer{flex:1}
+.safe-pill{width:62px;border:1px solid var(--border);border-radius:14px;background:var(--surface-1);padding:8px 0;font-size:.625rem;color:var(--text-muted);display:flex;flex-direction:column;align-items:center;gap:4px}
+.safe-pill[aria-pressed="true"]{background:rgba(255,180,84,.12);border-color:var(--amber);color:var(--amber)}
+main{padding:var(--sp-6) clamp(20px,4vw,56px) var(--sp-7);max-width:1380px;width:100%}
+.view{display:none}.view.on{display:block;animation:enter var(--dur-slow) var(--ease) both}
+@keyframes enter{from{opacity:0;transform:translateY(14px) scale(.995)}to{opacity:1;transform:none}}
+h1{font:600 clamp(1.9rem,3.2vw,2.8rem)/1.08 var(--font-display);letter-spacing:-.025em}
+h2{font:600 1.15rem/1.3 var(--font-display);letter-spacing:-.01em}
+.lede{color:var(--text-muted);max-width:60ch;margin-top:var(--sp-3)}
+.eyebrow{font-size:.75rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);font-weight:600;margin-bottom:var(--sp-2)}
+.btn{border:1px solid var(--border-strong);background:var(--surface-2);padding:10px 18px;border-radius:12px;font-weight:600;transition:transform var(--dur-fast) var(--ease),background var(--dur-fast),border-color var(--dur-fast)}
+.btn:hover{background:var(--surface-3);transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.98)}
+.btn.primary{background:var(--accent);color:var(--signal-ink);border-color:transparent;box-shadow:0 8px 28px -6px color-mix(in srgb,var(--accent) 60%,transparent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.card{background:linear-gradient(180deg,var(--surface-2),var(--surface-1));border:1px solid var(--border);border-radius:var(--r-l);box-shadow:var(--shadow-1)}
+.chip{display:inline-flex;gap:6px;align-items:center;font-size:.75rem;padding:3px 10px;border-radius:999px;background:var(--surface-3);color:var(--text-muted);border:1px solid var(--border)}
+.chip.ok{color:var(--signal);background:rgba(124,242,200,.08);border-color:rgba(124,242,200,.3)}
+.chip.warn{color:var(--amber);background:rgba(255,180,84,.08);border-color:rgba(255,180,84,.35)}
+.chip.bad{color:var(--danger);background:rgba(255,107,107,.08);border-color:rgba(255,107,107,.35)}
+.row{display:flex;gap:var(--sp-3);align-items:center}
+.between{justify-content:space-between}
+.mt{margin-top:var(--sp-5)}
+
+/* ============ SCENES: immersive stage ============ */
+.stage-wrap{perspective:1400px;margin-top:var(--sp-5)}
+.stage{position:relative;aspect-ratio:16/9;border-radius:var(--r-xl);overflow:hidden;border:1px solid var(--border-strong);box-shadow:var(--shadow-2),0 0 0 8px rgba(255,255,255,.02);transform-style:preserve-3d;transition:transform var(--dur-base) var(--ease);background:#000}
+.layer{position:absolute;inset:-6%;transition:transform 140ms linear,background var(--dur-slow) var(--ease);will-change:transform}
+.l-wall{background:var(--wall)}
+.l-mid{background:var(--mid);mix-blend-mode:screen;opacity:.9}
+.l-grain{inset:0;opacity:.07;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>")}
+.taskbar{position:absolute;left:50%;bottom:2.4%;transform:translateX(-50%);height:5.2%;min-height:22px;width:34%;border-radius:14px;background:rgba(20,22,30,.55);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.1);display:flex;gap:10px;align-items:center;justify-content:center}
+.taskbar b{width:3.2%;aspect-ratio:1;border-radius:6px;background:rgba(255,255,255,.35)}
+.w{position:absolute;border-radius:18px;padding:clamp(8px,1.4vw,18px);background:rgba(20,22,32,.46);backdrop-filter:blur(18px) saturate(1.3);border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 50px rgba(0,0,0,.35);transition:transform var(--dur-base) var(--ease),opacity var(--dur-base),filter var(--dur-base);color:#fff}
+.w:hover{transform:translateY(-4px) scale(1.02)}
+.w .t{font:600 clamp(1.1rem,3vw,2.9rem)/1 var(--font-display);letter-spacing:-.02em}
+.w small{display:block;font-size:clamp(.5rem,.9vw,.8rem);opacity:.7;margin-top:4px}
+.w-clock{left:7%;top:12%}
+.w-cpu{right:7%;top:12%;width:19%}
+.w-notes{left:7%;bottom:15%;width:24%}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.18);overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:var(--v,40%);background:var(--accent);border-radius:3px;transition:width var(--dur-slow) var(--ease)}
+.stage.safe .w{opacity:.25;filter:grayscale(1) blur(1px);pointer-events:none}
+.stage-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.6);border:1px solid var(--amber);color:var(--amber);font-weight:600}
+.stage.safe .stage-badge{display:block}
+.scenes{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--sp-4);margin-top:var(--sp-5)}
+.scene{position:relative;text-align:left;border:1px solid var(--border);border-radius:var(--r-m);padding:0;background:var(--surface-1);overflow:hidden;transition:transform var(--dur-base) var(--ease),border-color var(--dur-fast)}
+.scene:hover{transform:translateY(-4px)}
+.scene[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 16px 40px -10px color-mix(in srgb,var(--accent) 45%,transparent)}
+.scene .thumb{aspect-ratio:16/10;background:var(--wall)}
+.scene .meta{padding:10px 14px 14px}
+.scene .meta b{display:block}
+.applybar{position:sticky;bottom:18px;margin-top:var(--sp-5);display:flex;gap:var(--sp-3);align-items:center;justify-content:space-between;padding:12px 16px;border-radius:18px;background:rgba(18,20,26,.85);backdrop-filter:blur(16px);border:1px solid var(--border-strong);box-shadow:var(--shadow-2)}
+.progress{height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden;flex:1;max-width:220px;display:none}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width 200ms linear}
+
+/* ============ PERMISSIONS ============ */
+.grid2{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:var(--sp-5);margin-top:var(--sp-5)}
+@media(max-width:1000px){.grid2{grid-template-columns:1fr}.app{grid-template-columns:70px 1fr}}
+.wlist{display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-4)}
+.witem{border:1px solid var(--border);border-radius:var(--r-m);background:var(--surface-1)}
+.witem>button{width:100%;text-align:left;background:none;border:0;padding:14px 16px;display:flex;align-items:center;gap:var(--sp-3)}
+.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:700;background:var(--surface-3)}
+.witem .perm{display:none;padding:0 16px 14px;border-top:1px solid var(--border)}
+.witem.open .perm{display:block;animation:enter var(--dur-base) var(--ease)}
+.prow{display:flex;align-items:center;gap:var(--sp-3);padding:12px 0;border-bottom:1px dashed var(--border)}
+.prow:last-child{border:0}
+.prow .why{flex:1}.prow .why b{display:block;font-weight:600}.prow .why span{color:var(--text-muted);font-size:.8125rem}
+.sw{width:46px;height:28px;border-radius:14px;border:1px solid var(--border-strong);background:var(--surface-3);position:relative;padding:0;transition:background var(--dur-fast)}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform var(--dur-base) var(--ease)}
+.sw[aria-checked="true"]{background:var(--accent);border-color:transparent}
+.sw[aria-checked="true"]::after{transform:translateX(18px);background:var(--signal-ink)}
+.sw:disabled{opacity:.4;cursor:not-allowed}
+.meter{height:10px;border-radius:5px;background:var(--surface-3);overflow:hidden;margin-top:8px}
+.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--info));width:0;transition:width var(--dur-slow) var(--ease)}
+.log{font:.75rem/1.55 var(--mono);padding:var(--sp-3);max-height:420px;overflow:auto}
+.log div{display:grid;grid-template-columns:62px 1fr auto;gap:10px;padding:6px 8px;border-radius:8px}
+.log div:nth-child(odd){background:rgba(255,255,255,.025)}
+.log .ok{color:var(--signal)}.log .no{color:var(--danger)}
+.log small{color:var(--text-faint)}
+.explain{margin-top:var(--sp-3);padding:12px 14px;border-radius:12px;background:rgba(138,180,255,.07);border:1px solid rgba(138,180,255,.25);color:var(--info);font-size:.8125rem;display:none}
+.explain.on{display:block}
+
+/* ============ REMIX ============ */
+.remix{display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:var(--sp-5);margin-top:var(--sp-5)}
+@media(max-width:1000px){.remix{grid-template-columns:1fr}}
+.panel{padding:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-4)}
+label{font-size:.8125rem;color:var(--text-muted);display:block;margin-bottom:6px}
+input[type=text],select{width:100%;background:var(--surface-1);border:1px solid var(--border-strong);border-radius:10px;padding:10px 12px;color:var(--text);font:inherit}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.swatches{display:flex;gap:10px}
+.swatches button{width:32px;height:32px;border-radius:50%;border:2px solid transparent;background:var(--c);box-shadow:0 0 0 1px var(--border-strong)}
+.swatches button[aria-checked="true"]{border-color:#fff}
+.preview{display:grid;place-items:center;min-height:360px;border-radius:var(--r-l);background:var(--wall,linear-gradient(135deg,#2a2f55,#0d1b2a));border:1px solid var(--border);position:relative;overflow:hidden}
+.preview .w{position:relative;transform:scale(1.5)}
+
+/* ============ LIBRARY + SETTINGS ============ */
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--sp-4);margin-top:var(--sp-5)}
+.lib .card{padding:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-3)}
+.diff{border:1px solid rgba(255,180,84,.4);background:rgba(255,180,84,.07);border-radius:12px;padding:10px 12px;font-size:.8125rem}
+.diff b{color:var(--amber)}
+.set{max-width:720px;margin-top:var(--sp-5)}
+.set .prow{padding:16px var(--sp-4)}
+
+/* ============ ONBOARDING MODAL + TOAST ============ */
+.modal{position:fixed;inset:0;background:rgba(5,6,9,.78);backdrop-filter:blur(10px);display:none;place-items:center;z-index:50;padding:20px}
+.modal.on{display:grid}
+.sheet{width:min(760px,100%);padding:var(--sp-6);animation:enter var(--dur-slow) var(--ease)}
+.steps{display:flex;gap:6px;margin-bottom:var(--sp-5)}
+.steps i{flex:1;height:4px;border-radius:2px;background:var(--surface-3)}
+.steps i.on{background:var(--accent)}
+.vibes{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-3);margin:var(--sp-5) 0}
+@media(max-width:640px){.vibes{grid-template-columns:1fr}}
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,120px);background:var(--surface-3);border:1px solid var(--border-strong);border-radius:16px;padding:12px 16px;display:flex;gap:var(--sp-4);align-items:center;box-shadow:var(--shadow-2);transition:transform var(--dur-base) var(--ease);z-index:60}
+.toast.on{transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="app">
+  <nav class="rail" aria-label="Primary">
+    <div class="logo" aria-hidden="true"><i></i></div>
+    <div class="nav" id="nav">
+      <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
+      <button data-v="library"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>Library<span class="badge" id="updBadge">1</span></button>
+      <button data-v="perms"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
+      <button data-v="moods"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>Moods</button>
+      <button data-v="remix"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg>Remix</button>
+      <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Settings</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="safe-pill" id="safePill" aria-pressed="false" title="Safe mode disables all third-party widgets"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeState">Off</span></button>
+  </nav>
+
+  <main id="main" tabindex="-1">
+    <!-- SCENES -->
+    <section class="view on" id="v-scenes" aria-labelledby="h-scenes">
+      <div class="eyebrow">Scenes</div>
+      <h1 id="h-scenes">Your desktop, in one click.</h1>
+      <p class="lede">A Scene is a wallpaper, a set of widgets and a color mood that arrive together. Every widget declares what it can touch, and you can undo the whole thing.</p>
+      <div class="stage-wrap"><div class="stage" id="stage" aria-label="Live preview of your desktop with the selected scene">
+        <div class="layer l-wall" data-d="8"></div><div class="layer l-mid" data-d="16"></div><div class="layer l-grain"></div>
+        <div class="w w-clock"><div class="t" id="pvTime">09:41</div><small>Thursday, 30 October</small></div>
+        <div class="w w-cpu"><div style="font-weight:600;font-size:clamp(.6rem,1.1vw,1rem)">CPU</div><div class="bar"><i id="pvCpu" style="--v:34%"></i></div><small id="pvCpuT">34% · 8 cores</small></div>
+        <div class="w w-notes"><div style="font-weight:600;font-size:clamp(.6rem,1.1vw,1rem)">Today</div><small>Ship permission center</small><small>Review v0.2 spikes</small></div>
+        <div class="taskbar" aria-hidden="true"><b></b><b></b><b></b><b></b></div>
+        <div class="stage-badge">Safe mode: third-party widgets are off</div>
+      </div></div>
+      <div class="scenes" role="radiogroup" aria-label="Choose a scene" id="sceneList"></div>
+      <div class="applybar"><div><b id="applyName">Dusk</b> <span class="chip ok" id="applyChip">3 widgets · 2 permissions</span></div>
+        <div class="progress" id="prog"><i></i></div>
+        <div class="row"><button class="btn ghost" id="editBtn" aria-pressed="false">Edit layout</button><button class="btn ghost" id="shareBtn">Share setup</button><button class="btn ghost" id="revertBtn" disabled>Revert</button><button class="btn primary" id="applyBtn">Apply to my desktop</button></div></div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section class="view" id="v-library" aria-labelledby="h-lib">
+      <div class="eyebrow">Library</div><h1 id="h-lib">Installed, up to date, and under control.</h1>
+      <p class="lede">Updates never get new powers silently. If a widget asks for more, you see exactly what changed first.</p>
+      <div class="lib" id="libGrid"></div>
+    </section>
+
+    <!-- PERMISSIONS -->
+    <section class="view" id="v-perms" aria-labelledby="h-perms">
+      <div class="eyebrow">Safety · Permission Center</div><h1 id="h-perms">See everything. Revoke anything.</h1>
+      <p class="lede">Widgets can only use what they declared and you allowed. Every request is logged here, including the ones that were blocked.</p>
+      <div class="grid2">
+        <div class="card"><div class="wlist" id="wlist"></div></div>
+        <div style="display:flex;flex-direction:column;gap:var(--sp-5)">
+          <div class="card" style="padding:var(--sp-5)"><div class="row between"><h2>Widget slots</h2><span class="chip" id="slotChip">2 of 8 used</span></div>
+            <p style="color:var(--text-muted);font-size:.8125rem;margin-top:6px">Each third-party widget runs in its own isolated process (about 29 MB). Bundled widgets share one trusted process.</p>
+            <div class="meter" role="img" aria-label="Memory used by third-party widgets"><i id="memBar"></i></div>
+            <div class="row between" style="margin-top:6px;font-size:.75rem;color:var(--text-faint)"><span id="memTxt">≈58 MB</span><span>cap ≈232 MB</span></div></div>
+          <div class="card"><div class="row between" style="padding:var(--sp-4) var(--sp-4) 0"><h2>Activity</h2><button class="btn ghost" id="clearLog" style="padding:6px 12px">Clear view</button></div>
+            <div class="log" id="log" role="log" aria-live="polite" aria-label="Widget activity"></div></div>
+          <div class="explain" id="explain" role="note"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MOODS -->
+    <section class="view" id="v-moods" aria-labelledby="h-moods">
+      <div class="eyebrow">Moods</div><h1 id="h-moods">Your desktop follows your day.</h1>
+      <p class="lede">Rules switch Scenes for you: when a game is fullscreen, when you open your editor, at night, on battery. Rules never fight a choice you just made, and Plinth only suggests new rules; it never creates them behind your back.</p>
+      <div class="grid2">
+        <div class="card"><div class="wlist" id="ruleList"></div>
+          <div style="padding:0 var(--sp-4) var(--sp-4)"><div class="row" style="flex-wrap:wrap;gap:8px"><span>When</span>
+            <select id="ruleWhen" style="width:auto" aria-label="Condition"><option value="fullscreen">a game or app is fullscreen</option><option value="battery">I am on battery</option><option value="night">it is between 22:00 and 06:00</option><option value="app:code.exe">Visual Studio Code is in front</option><option value="app:blender.exe">Blender is in front</option></select>
+            <span>switch to</span><select id="ruleScene" style="width:auto" aria-label="Scene"></select><button class="btn primary" id="ruleAdd">Add rule</button></div></div></div>
+        <div style="display:flex;flex-direction:column;gap:var(--sp-5)">
+          <div class="card" style="padding:var(--sp-5)"><h2>Right now</h2><p id="moodNow" style="color:var(--text-muted);margin-top:6px">Context: Chrome in front, plugged in, 14:20. Scene: Paper (default).</p>
+            <div class="row mt" style="flex-wrap:wrap"><button class="btn" data-sim="game">Simulate: start a game</button><button class="btn" data-sim="night">Simulate: 23:00</button><button class="btn" data-sim="blender">Simulate: pick Graphite in Blender ×3</button></div></div>
+          <div class="explain on" id="moodExplain" role="status">Automation pauses when you pick a Scene yourself, until the situation changes. Switches wait at least 60 seconds so your desktop never flickers.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REMIX -->
+    <section class="view" id="v-remix" aria-labelledby="h-remix">
+      <div class="eyebrow">Remix</div><h1 id="h-remix">Make it yours. No code.</h1>
+      <p class="lede">Change text, size, color and data source on any built-in widget. Your variant is saved to the Library and stays safe: it can only use what the original could.</p>
+      <div class="remix">
+        <div class="card panel">
+          <div><label for="rxTitle">Title</label><input id="rxTitle" type="text" value="Focus time"></div>
+          <div><label for="rxSize">Size</label><input id="rxSize" type="range" min="14" max="40" value="26"></div>
+          <div><label id="rxColL">Accent</label><div class="swatches" role="radiogroup" aria-labelledby="rxColL" id="rxCol"></div></div>
+          <div><label for="rxData">Data source</label><select id="rxData"><option value="clock">Clock (no permissions)</option><option value="cpu">CPU load (needs “CPU”)</option><option value="ram">Memory (needs “Memory”)</option></select></div>
+          <div class="row"><button class="btn primary" id="rxSave">Save as my variant</button><span class="chip" id="rxPerm">Permissions: none</span></div>
+        </div>
+        <div class="preview" id="rxPrev"><div class="w" id="rxW"><div class="t" id="rxVal">09:41</div><small id="rxLbl">Focus time</small></div></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="v-settings" aria-labelledby="h-set">
+      <div class="eyebrow">Settings</div><h1 id="h-set">Comfortable by default.</h1>
+      <div class="card set">
+        <div class="prow"><div class="why"><b>Reduce motion</b><span>Stops parallax, tilt and animated transitions. Follows Windows by default.</span></div><button class="sw" id="swMotion" role="switch" aria-checked="false" aria-label="Reduce motion"></button></div>
+        <div class="prow"><div class="why"><b>High contrast</b><span>Stronger borders and brighter secondary text.</span></div><button class="sw" id="swContrast" role="switch" aria-checked="false" aria-label="High contrast"></button></div>
+        <div class="prow"><div class="why"><b>Interface size</b><span id="scaleTxt">100%</span></div><input type="range" id="scale" min="90" max="130" value="100" style="max-width:200px" aria-label="Interface size"></div>
+        <div class="prow"><div class="why"><b>Pause widgets in games and fullscreen</b><span>Recommended. Also frees memory while a game runs.</span></div><button class="sw" role="switch" aria-checked="true" aria-label="Pause in games"></button></div>
+        <div class="prow"><div class="why"><b>Pause on battery below 20%</b><span>Widgets resume when you plug in.</span></div><button class="sw" role="switch" aria-checked="true" aria-label="Pause on low battery"></button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- First-run -->
+<div class="modal on" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <div class="card sheet">
+    <div class="steps" id="msteps"><i class="on"></i><i></i><i></i></div>
+    <div id="m1"><div class="eyebrow">Welcome</div><h1 id="mTitle" style="font-size:2.2rem">Pick a vibe.</h1><p class="lede">You can change everything later. Nothing touches your system until you press Apply.</p>
+      <div class="vibes" role="radiogroup" aria-label="Choose a vibe" id="mVibes"></div></div>
+    <div id="m2" hidden><div class="eyebrow">Preview</div><h1 style="font-size:2.2rem">This is your screen.</h1><p class="lede">Fitted to your monitor size and scaling. Pointer over the preview to feel the depth.</p><div class="stage-wrap"><div class="stage" id="miniStage" style="aspect-ratio:16/8"><div class="layer l-wall"></div><div class="layer l-mid"></div><div class="layer l-grain"></div><div class="w w-clock"><div class="t">09:41</div></div><div class="w w-cpu"><div class="bar"><i style="--v:34%"></i></div></div></div></div></div>
+    <div id="m3" hidden><div class="eyebrow">Trust</div><h1 style="font-size:2.2rem">Widgets ask first.</h1>
+      <div style="display:grid;gap:var(--sp-3);margin-top:var(--sp-5)"><div class="prow" style="padding:0"><span class="chip ok">Allowed</span><div class="why"><b>Clock, Calendar, System monitor</b><span>Built in. Read-only system numbers, nothing leaves your PC.</span></div></div>
+      <div class="prow" style="padding:0"><span class="chip warn">Asks</span><div class="why"><b>Weather</b><span>Wants to contact api.weather.example. You approve it in Safety.</span></div></div>
+      <div class="prow" style="padding:0"><span class="chip bad">Never</span><div class="why"><b>Your files, programs, keystrokes</b><span>No widget can ever request these.</span></div></div></div></div>
+    <div class="row between mt"><button class="btn ghost" id="mSkip">Skip setup</button><div class="row"><button class="btn ghost" id="mBack" hidden>Back</button><button class="btn primary" id="mNext">Continue</button></div></div>
+  </div>
+</div>
+<div class="modal" id="share" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+  <div class="card sheet">
+    <div class="eyebrow">Setup card</div><h1 id="shTitle" style="font-size:2rem">Share this desktop.</h1>
+    <p class="lede">A setup card is a small file: the Scene, widget layout and accent. It contains no code. Anyone who opens it sees what it needs before anything is installed, and gets a 60-second try-out with undo.</p>
+    <div class="row mt" style="align-items:flex-start;gap:var(--sp-5);flex-wrap:wrap">
+      <pre id="shJson" tabindex="0" aria-label="Setup card contents" style="flex:1;min-width:260px;max-height:230px;overflow:auto;background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:12px;font:.75rem/1.5 var(--mono);color:var(--text-muted)"></pre>
+      <div style="flex:1;min-width:240px"><b>When someone opens it</b><div id="shSum" style="margin-top:8px;display:grid;gap:8px"></div></div></div>
+    <div class="row between mt"><span class="chip" id="shRemix">Original card</span><div class="row"><button class="btn ghost" id="shClose">Close</button><button class="btn primary" id="shCopy">Copy card</button></div></div>
+  </div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastTxt"></span><button class="btn ghost" id="toastUndo" style="padding:6px 12px">Undo</button></div>
+
+<script>
+(()=>{
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+const store={get(k,d){try{const v=localStorage.getItem('plinth.'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('plinth.'+k,JSON.stringify(v))}catch(e){}}};
+
+/* ---------- data ---------- */
+const SCENES=[
+ {id:'dusk',name:'Dusk',desc:'Warm, calm, low glare',wall:'linear-gradient(160deg,#2b1b4d 0%,#5b2a6b 40%,#d9667a 85%,#ffb27a 100%)',mid:'radial-gradient(60% 50% at 70% 30%,rgba(255,170,120,.35),transparent 70%)',acc:'#ffb27a'},
+ {id:'graphite',name:'Graphite',desc:'Matte, focused, no noise',wall:'linear-gradient(160deg,#0d0f14 0%,#1a1e2b 55%,#2c3347 100%)',mid:'radial-gradient(50% 60% at 25% 70%,rgba(124,242,200,.22),transparent 70%)',acc:'#7cf2c8'},
+ {id:'paper',name:'Paper',desc:'Light, airy, high legibility',wall:'linear-gradient(160deg,#e9e4da 0%,#cfd8dc 60%,#b7c4d6 100%)',mid:'radial-gradient(55% 55% at 75% 25%,rgba(255,255,255,.7),transparent 70%)',acc:'#3b6cff',light:true},
+];
+const WIDGETS=[
+ {id:'clock',name:'Clock',pub:'Plinth',first:true,perms:[],ver:'1.2.0'},
+ {id:'sys',name:'System monitor',pub:'Plinth',first:true,perms:[{k:'system.cpu',n:'CPU load',why:'Shows how busy your processor is'},{k:'system.ram',n:'Memory',why:'Shows memory in use'}],ver:'1.4.1'},
+ {id:'weather',name:'Weather',pub:'Skyline Studio',first:false,ver:'2.1.0',perms:[{k:'net.fetch',n:'Internet: api.weather.example',why:'Fetches the forecast for your city'},{k:'storage',n:'Remember settings',why:'Saves your city (up to 64 KB)'}],upd:{from:'2.0.3',add:[{k:'net.fetch',n:'Internet: ads.tracker.example',why:'Not explained by the publisher'}]}},
+ {id:'notes',name:'Sticky notes',pub:'Lumen Labs',first:false,ver:'0.9.4',perms:[{k:'storage',n:'Remember settings',why:'Saves your notes (up to 64 KB)'}]},
+];
+const grants=store.get('grants',{sys:{'system.cpu':true,'system.ram':true},weather:{'net.fetch':false,'storage':true},notes:{storage:true}});
+const used=new Set(['weather','notes']);
+
+/* ---------- nav ---------- */
+function show(v){$$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));$$('#nav button').forEach(b=>b.toggleAttribute('aria-current',b.dataset.v===v)); $$('#nav button').forEach(b=>{if(b.dataset.v===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});$('#main').focus({preventScroll:true});window.scrollTo(0,0)}
+$$('#nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+
+/* ---------- scenes + parallax ---------- */
+let scene=store.get('scene','dusk');
+function paint(el,sc){el.style.setProperty('--wall',sc.wall);el.style.setProperty('--mid',sc.mid);el.style.setProperty('--accent',sc.acc)}
+function renderScenes(){
+  const list=$('#sceneList');list.innerHTML='';
+  SCENES.forEach(s=>{const b=document.createElement('button');b.className='scene';b.setAttribute('role','radio');b.setAttribute('aria-checked',s.id===scene);b.innerHTML=`<div class="thumb" style="--wall:${s.wall}"></div><div class="meta"><b>${s.name}</b><span style="color:var(--text-muted);font-size:.8125rem">${s.desc}</span></div>`;b.onclick=()=>{scene=s.id;store.set('scene',scene);renderScenes();applyScene()};list.append(b)});
+  $('#applyName').textContent=SCENES.find(s=>s.id===scene).name;
+}
+function applyScene(){const s=SCENES.find(x=>x.id===scene);paint($('#stage'),s);paint($('#miniStage'),s);document.documentElement.style.setProperty('--accent',s.acc);document.documentElement.style.setProperty('--signal-ink',s.light?'#fff':'#04281d');$$('#stage .w,#miniStage .w').forEach(w=>w.style.color=s.light?'#10131c':'#fff')}
+function parallax(stage){stage.addEventListener('pointermove',e=>{if(document.documentElement.dataset.motion==='reduce'||matchMedia('(prefers-reduced-motion: reduce)').matches)return;const r=stage.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;$$('.layer[data-d]',stage).forEach(l=>l.style.transform=`translate(${-x*l.dataset.d}px,${-y*l.dataset.d}px)`);stage.style.transform=`rotateX(${-y*3}deg) rotateY(${x*4}deg)`});stage.addEventListener('pointerleave',()=>{stage.style.transform='';$$('.layer[data-d]',stage).forEach(l=>l.style.transform='')})}
+parallax($('#stage'));
+setInterval(()=>{const v=22+Math.round(Math.random()*45);$('#pvCpu').style.setProperty('--v',v+'%');$('#pvCpuT').textContent=v+'% · 8 cores';const d=new Date();$('#pvTime').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},2000);
+
+/* apply / revert with undo */
+let prev=null;
+function toast(msg,undo){$('#toastTxt').textContent=msg;$('#toastUndo').style.display=undo?'':'none';$('#toastUndo').onclick=undo||null;$('#toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('#toast').classList.remove('on'),7000)}
+$('#applyBtn').onclick=()=>{const p=$('#prog'),i=$('i',p);p.style.display='block';i.style.width='0';let n=0;$('#applyBtn').disabled=true;const t=setInterval(()=>{n+=25;i.style.width=n+'%';if(n>=100){clearInterval(t);p.style.display='none';$('#applyBtn').disabled=false;prev=store.get('applied',null);store.set('applied',scene);$('#revertBtn').disabled=false;toast('Applied “'+SCENES.find(s=>s.id===scene).name+'”. Your previous desktop is saved.',revert);log('Plinth','apply scene '+scene,true)}},180)};
+function revert(){store.set('applied',prev);$('#revertBtn').disabled=true;toast('Reverted to your previous desktop.');log('Plinth','revert scene',true)}
+$('#revertBtn').onclick=revert;
+
+/* ---------- safe mode ---------- */
+let safe=false;
+function setSafe(v){safe=v;$('#stage').classList.toggle('safe',v);$('#safePill').setAttribute('aria-pressed',v);$('#safeState').textContent=v?'On':'Off';renderPerms();log('Plinth','safe mode '+(v?'on':'off'),true);toast(v?'Safe mode on. Third-party widgets are paused.':'Safe mode off.')}
+$('#safePill').onclick=()=>setSafe(!safe);
+
+/* ---------- permissions ---------- */
+const logEl=$('#log');
+function log(w,a,ok,why){const d=document.createElement('div');const t=new Date().toLocaleTimeString([], {hour12:false});d.innerHTML=`<small>${t}</small><span><b>${w}</b> ${a}</span><span class="${ok?'ok':'no'}">${ok?'allowed':'blocked'}</span>`;if(!ok){d.style.cursor='pointer';d.tabIndex=0;d.title='Why was this blocked?';const f=()=>explain(w,a,why);d.onclick=f;d.onkeydown=e=>{if(e.key==='Enter')f()}}logEl.prepend(d);while(logEl.children.length>60)logEl.lastChild.remove()}
+function explain(w,a,why){const e=$('#explain');e.innerHTML=`<b>Why was this blocked?</b><br>${w} tried to ${a}. ${why||'You have not allowed it.'} You can change this under “${w}” on the left.`;e.classList.add('on')}
+$('#clearLog').onclick=()=>{logEl.innerHTML='';$('#explain').classList.remove('on')};
+function renderPerms(){
+  const wl=$('#wlist');const open=$$('.witem.open',wl).map(x=>x.dataset.id);wl.innerHTML='';
+  WIDGETS.forEach(w=>{const el=document.createElement('div');el.className='witem'+(open.includes(w.id)?' open':'');el.dataset.id=w.id;
+    const granted=(grants[w.id]||{});const nOn=w.perms.filter(p=>granted[p.k]).length;
+    el.innerHTML=`<button aria-expanded="${open.includes(w.id)}"><div class="avatar">${w.name[0]}</div><div style="flex:1"><b>${w.name}</b><div style="color:var(--text-muted);font-size:.8125rem">${w.pub} · v${w.ver}</div></div><span class="chip ${w.first?'ok':(safe?'warn':'')}">${w.first?'Built in':(safe?'Paused':'Isolated')}</span><span class="chip">${nOn}/${w.perms.length} allowed</span></button><div class="perm">${w.perms.length?'':'<div class="prow"><div class="why"><b>No permissions</b><span>This widget cannot read anything or reach the internet.</span></div></div>'}</div>`;
+    const box=$('.perm',el);
+    w.perms.forEach(p=>{const r=document.createElement('div');r.className='prow';r.innerHTML=`<div class="why"><b>${p.n}</b><span>${p.why}</span></div>`;const sw=document.createElement('button');sw.className='sw';sw.setAttribute('role','switch');sw.setAttribute('aria-label',`${p.n} for ${w.name}`);sw.setAttribute('aria-checked',!!granted[p.k]);sw.disabled=safe&&!w.first;sw.onclick=()=>{const v=!(grants[w.id]||{})[p.k];(grants[w.id]=grants[w.id]||{})[p.k]=v;store.set('grants',grants);log(w.name,(v?'granted ':'revoked ')+p.n,true);renderPerms()};r.append(sw);box.append(r)});
+    $('button',el).onclick=()=>{el.classList.toggle('open');$('button',el).setAttribute('aria-expanded',el.classList.contains('open'))};wl.append(el)});
+  const n=WIDGETS.filter(w=>!w.first&&used.has(w.id)).length;$('#slotChip').textContent=`${n} of 8 used`;$('#memBar').style.width=(n*29/232*100)+'%';$('#memTxt').textContent='≈'+(n*29)+' MB';
+}
+/* simulated activity so the log feels alive; blocked entries show the product promise */
+const sim=[()=>{const g=grants.sys||{};log('System monitor','read CPU load',!!g['system.cpu'])},()=>{const g=grants.weather||{};const ok=!!g['net.fetch']&&!safe;log('Weather','contact api.weather.example',ok,ok?'':safe?'Safe mode is on.':'You have not allowed internet access for this widget.')},()=>log('Sticky notes','read your files',false,'Widgets can never read files. This is not a permission, it is impossible by design.'),()=>log('Weather','contact ads.tracker.example',false,'That address is not on the widget’s approved list.')];
+let si=0;setInterval(()=>{if(document.hidden)return;sim[si++%sim.length]()},3500);
+
+/* ---------- library ---------- */
+let updated=false;
+function renderLib(){const g=$('#libGrid');g.innerHTML='';WIDGETS.forEach(w=>{const c=document.createElement('div');c.className='card';const hasUpd=w.upd&&!updated;c.innerHTML=`<div class="row between"><div class="row"><div class="avatar">${w.name[0]}</div><div><b>${w.name}</b><div style="color:var(--text-muted);font-size:.8125rem">${w.pub}</div></div></div><span class="chip ${hasUpd?'warn':'ok'}">${hasUpd?'Update':'v'+w.ver}</span></div>${hasUpd?`<div class="diff"><b>v${w.upd.from} → v${w.ver} wants new access</b><br>${w.upd.add.map(a=>'+ '+a.n).join('<br>')}<br><span style="color:var(--text-muted)">Not granted unless you approve.</span></div><div class="row"><button class="btn primary" data-a="ok">Update, keep old access</button><button class="btn ghost" data-a="no">Skip</button></div>`:`<div style="color:var(--text-muted);font-size:.8125rem">${w.first?'Bundled, shares the trusted process.':'Runs isolated in its own process.'}</div>`}`;const ok=$('[data-a=ok]',c);if(ok)ok.onclick=()=>{updated=true;$('#updBadge').remove();renderLib();log('Weather','updated to v2.1.0 (new access NOT granted)',true);toast('Updated. The new internet access stays off until you allow it.')};const no=$('[data-a=no]',c);if(no)no.onclick=()=>toast('Skipped. You can update later.');g.append(c)})}
+
+/* ---------- remix ---------- */
+const COLS=['#7cf2c8','#8ab4ff','#ffb454','#ff8fb1','#d2b4ff'];let rxC=COLS[0];
+COLS.forEach((c,i)=>{const b=document.createElement('button');b.style.setProperty('--c',c);b.setAttribute('role','radio');b.setAttribute('aria-label','Accent '+(i+1));b.setAttribute('aria-checked',i===0);b.onclick=()=>{rxC=c;$$('#rxCol button').forEach(x=>x.setAttribute('aria-checked',x===b));rx()};$('#rxCol').append(b)});
+function rx(){$('#rxLbl').textContent=$('#rxTitle').value;$('#rxVal').style.fontSize=$('#rxSize').value+'px';$('#rxVal').style.color=rxC;const d=$('#rxData').value;$('#rxVal').textContent=d==='clock'?'09:41':d==='cpu'?'34%':'8.1 GB';$('#rxPerm').textContent=d==='clock'?'Permissions: none':'Permissions: '+(d==='cpu'?'CPU':'Memory');$('#rxPerm').className='chip '+(d==='clock'?'ok':'warn')}
+['input','change'].forEach(e=>['#rxTitle','#rxSize','#rxData'].forEach(s=>$(s).addEventListener(e,rx)));
+$('#rxSave').onclick=()=>{toast('Saved “'+$('#rxTitle').value+'” to your Library. It can only use what the original could.')};rx();
+
+/* ---------- settings ---------- */
+function sw(el,fn){el.onclick=()=>{const v=el.getAttribute('aria-checked')!=='true';el.setAttribute('aria-checked',v);fn(v)}}
+sw($('#swMotion'),v=>{document.documentElement.dataset.motion=v?'reduce':'';store.set('motion',v)});
+sw($('#swContrast'),v=>{document.documentElement.dataset.contrast=v?'high':'';store.set('contrast',v)});
+$$('.prow .sw:not(#swMotion):not(#swContrast)').forEach(s=>sw(s,()=>{}));
+$('#scale').oninput=e=>{document.documentElement.style.setProperty('--ui-scale',e.target.value/100);$('#scaleTxt').textContent=e.target.value+'%';store.set('scale',e.target.value)};
+if(store.get('motion',matchMedia('(prefers-reduced-motion: reduce)').matches)){document.documentElement.dataset.motion='reduce';$('#swMotion').setAttribute('aria-checked','true')}
+if(store.get('contrast',false)){document.documentElement.dataset.contrast='high';$('#swContrast').setAttribute('aria-checked','true')}
+const sc=store.get('scale',100);$('#scale').value=sc;document.documentElement.style.setProperty('--ui-scale',sc/100);$('#scaleTxt').textContent=sc+'%';
+
+/* ---------- first run ---------- */
+let step=1;
+SCENES.forEach(s=>{const b=document.createElement('button');b.className='scene';b.setAttribute('role','radio');b.setAttribute('aria-checked',s.id===scene);b.innerHTML=`<div class="thumb" style="--wall:${s.wall}"></div><div class="meta"><b>${s.name}</b><span style="color:var(--text-muted);font-size:.8125rem">${s.desc}</span></div>`;b.onclick=()=>{scene=s.id;$$('#mVibes .scene').forEach(x=>x.setAttribute('aria-checked',x===b));renderScenes();applyScene()};$('#mVibes').append(b)});
+function mstep(n){step=n;[1,2,3].forEach(i=>$('#m'+i).hidden=i!==n);$$('#msteps i').forEach((x,i)=>x.classList.toggle('on',i<n));$('#mBack').hidden=n===1;$('#mNext').textContent=n===3?'Finish':'Continue'}
+$('#mNext').onclick=()=>{if(step<3)mstep(step+1);else{closeModal()}};$('#mBack').onclick=()=>mstep(step-1);$('#mSkip').onclick=closeModal;
+function closeModal(){$('#modal').classList.remove('on');store.set('onboarded',true);$('#main').focus()}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').classList.contains('on'))closeModal()});
+if(store.get('onboarded',false))$('#modal').classList.remove('on');
+parallax($('#miniStage'));
+
+/* ---------- Impact Meter (numbers from plinth-core impact.rs: host 146 MB, shared widget 2.5 MB, isolated 29 MB) ---------- */
+const COUNTS={dusk:[3,1],graphite:[3,0],paper:[2,2]};
+function impact(id){const [sh,iso]=COUNTS[id]||[0,0];return{ram:Math.round(146+2.5*sh+29*iso),cpu:(0.15+0.1*sh+0.2*iso).toFixed(1)}}
+function decorate(){$$('#sceneList .scene').forEach((el,i)=>{const s=SCENES[i],m=impact(s.id);if($('.imp',el))return;const d=document.createElement('div');d.className='imp';d.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px';d.innerHTML=`<span class="chip">≈${m.ram} MB</span><span class="chip">${m.cpu}% CPU</span><span class="chip ok">Gaming-safe: pauses</span>`;$('.meta',el).append(d)});const m=impact(scene);$('#applyChip').textContent=`≈${m.ram} MB · ${m.cpu}% CPU · pauses in games`}
+const _rs=renderScenes;renderScenes=function(){_rs();decorate()};
+
+/* ---------- Edit layout: drag widgets on the real preview, snapping to a 12x8 grid ---------- */
+let editing=false;
+function setEdit(v){editing=v;$('#editBtn').setAttribute('aria-pressed',v);$('#editBtn').textContent=v?'Done editing':'Edit layout';const st=$('#stage');st.style.outline=v?'2px dashed var(--accent)':'';$$('#stage .w').forEach(w=>{w.style.cursor=v?'grab':'';w.style.touchAction=v?'none':'';w.tabIndex=v?0:-1;w.setAttribute('aria-roledescription',v?'movable widget':'')});if(v)toast('Edit mode: drag widgets, or focus one and use the arrow keys. They snap to a grid.');}
+$('#editBtn').onclick=()=>setEdit(!editing);
+function snap(w,x,y){const st=$('#stage').getBoundingClientRect();const gx=st.width/12,gy=st.height/8;let nx=Math.round(x/gx)*gx,ny=Math.round(y/gy)*gy;nx=Math.max(0,Math.min(nx,st.width-w.offsetWidth));ny=Math.max(0,Math.min(ny,st.height-w.offsetHeight));w.style.left=nx+'px';w.style.top=ny+'px';w.style.right='auto';w.style.bottom='auto'}
+$$('#stage .w').forEach(w=>{let sx,sy,ox,oy,drag=false;w.addEventListener('pointerdown',e=>{if(!editing)return;drag=true;w.setPointerCapture(e.pointerId);sx=e.clientX;sy=e.clientY;ox=w.offsetLeft;oy=w.offsetTop;w.style.cursor='grabbing';w.style.transition='none'});w.addEventListener('pointermove',e=>{if(!drag)return;w.style.left=(ox+e.clientX-sx)+'px';w.style.top=(oy+e.clientY-sy)+'px';w.style.right='auto';w.style.bottom='auto'});const end=()=>{if(!drag)return;drag=false;w.style.cursor='grab';w.style.transition='';snap(w,w.offsetLeft,w.offsetTop);log('You','moved a widget (layout saved)',true)};w.addEventListener('pointerup',end);w.addEventListener('pointercancel',end);w.addEventListener('keydown',e=>{if(!editing)return;const st=$('#stage').getBoundingClientRect(),gx=st.width/12,gy=st.height/8,k={ArrowLeft:[-gx,0],ArrowRight:[gx,0],ArrowUp:[0,-gy],ArrowDown:[0,gy]}[e.key];if(!k)return;e.preventDefault();snap(w,w.offsetLeft+k[0],w.offsetTop+k[1])})});
+
+/* ---------- Share setup: setup card + combined permissions ---------- */
+function card(){const s=SCENES.find(x=>x.id===scene);return{format:1,id:'com.you.'+s.id+'-focus',name:s.name+' Focus',author:'You',remix_of:null,scene:s.id,accent:s.acc,widgets:[{widget:'com.plinth.clock',version:'1.2.0',rect:[70,120,300,160]},{widget:'com.plinth.sys',version:'1.4.1',rect:[700,100,250,200]},{widget:'com.skyline.weather',version:'2.1.0',rect:[70,640,300,200]}]}}
+$('#shareBtn').onclick=()=>{const c=card();$('#shJson').textContent=JSON.stringify(c,null,2);$('#shSum').innerHTML=`<div class="row"><span class="chip ok">Read-only</span><span>Clock, System monitor (built in)</span></div><div class="row"><span class="chip warn">Asks</span><span>Weather would ask to contact <b>api.weather.example</b></span></div><div class="row"><span class="chip">Cost</span><span>≈${impact(scene).ram} MB · ${impact(scene).cpu}% CPU · pauses in games</span></div><div class="row"><span class="chip ok">Safe</span><span>No code inside. 60-second try-out, then keep or undo.</span></div>`;$('#shRemix').textContent='Original card · credit stays with you if others remix it';$('#share').classList.add('on');$('#shCopy').focus()};
+$('#shClose').onclick=()=>$('#share').classList.remove('on');
+$('#shCopy').onclick=async()=>{try{await navigator.clipboard.writeText($('#shJson').textContent);toast('Card copied. Paste it in a chat or post.')}catch(e){toast('Select the card text and copy it (clipboard not available here).')}$('#share').classList.remove('on')};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#share').classList.contains('on'))$('#share').classList.remove('on')});
+
+/* ---------- Moods ---------- */
+const RULES=[{name:'Gaming',when:'a game or app is fullscreen',scene:'graphite'},{name:'Night',when:'it is between 22:00 and 06:00',scene:'dusk'},{name:'Default',when:'anything else',scene:'paper'}];
+function sceneName(id){return SCENES.find(s=>s.id===id).name}
+function renderRules(){const l=$('#ruleList');l.innerHTML='';RULES.forEach((r,i)=>{const d=document.createElement('div');d.className='witem';d.innerHTML=`<div style="display:flex;align-items:center;gap:12px;padding:14px 16px"><div class="avatar">${i+1}</div><div style="flex:1"><b>When ${r.when}</b><div style="color:var(--text-muted);font-size:.8125rem">switch to ${sceneName(r.scene)}${i===0?' · highest priority':''}</div></div></div>`;if(r.name!=='Default'){const b=document.createElement('button');b.className='btn ghost';b.style.cssText='margin-right:12px;padding:6px 12px';b.textContent='Remove';b.setAttribute('aria-label','Remove rule '+(i+1));b.onclick=()=>{RULES.splice(i,1);renderRules()};$('div',d).append(b)}l.append(d)})}
+SCENES.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name;$('#ruleScene').append(o)});
+$('#ruleAdd').onclick=()=>{const w=$('#ruleWhen');RULES.splice(RULES.length-1,0,{name:'Custom',when:w.options[w.selectedIndex].text,scene:$('#ruleScene').value});renderRules();toast('Rule added. It sits above the default.')};
+function setNow(t,s){$('#moodNow').textContent=t;if(s){scene=s;store.set('scene',scene);renderScenes();applyScene()}}
+$$('[data-sim]').forEach(b=>b.onclick=()=>{const k=b.dataset.sim;if(k==='game'){setNow('Context: a game is fullscreen. Switched to Graphite and paused third-party widgets.','graphite');log('Moods','switched to Graphite (rule: fullscreen)',true)}
+ else if(k==='night'){setNow('Context: 23:00. Switched to Dusk (rule: night).','dusk');log('Moods','switched to Dusk (rule: night)',true)}
+ else{setNow('Context: Blender in front. You chose Graphite (3rd time).','graphite');$('#moodExplain').innerHTML='<b>Make this automatic?</b> You picked Graphite 3 times while Blender was in front. <div class="row" style="margin-top:8px"><button class="btn primary" id="sugOk">Yes, add a rule</button><button class="btn ghost" id="sugNo">Not now</button></div>';$('#sugOk').onclick=()=>{RULES.splice(RULES.length-1,0,{name:'Learned',when:'Blender is in front',scene:'graphite'});renderRules();$('#moodExplain').textContent='Rule added: Blender in front → Graphite. You can remove it any time.'};$('#sugNo').onclick=()=>{$('#moodExplain').textContent='Okay. I will not suggest this again.'}}});
+renderRules();
+
+renderScenes();applyScene();renderPerms();renderLib();
+if(new URLSearchParams(location.search).get('v'))show(new URLSearchParams(location.search).get('v'));
+if(new URLSearchParams(location.search).get('skip')){closeModal()}
+})();
+</script>
+</body>
+</html>
