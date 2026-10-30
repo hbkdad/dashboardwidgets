@@ -869,7 +869,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "host-demo"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "plinth-core",
  "plinth-host",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "layer-probe"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "libappindicator"
@@ -1681,7 +1681,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plinth-app"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "image",
  "plinth-core",
@@ -1697,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "plinth-core"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "plinth-host"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "plinth-core",
  "serde_json",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "plinth-proxy"
-version = "0.11.0"
+version = "0.12.0"
 
 [[package]]
 name = "png"
@@ -1889,7 +1889,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-probe"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "tao",
  "wry",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "webview-probe"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "raw-window-handle",
  "wry",

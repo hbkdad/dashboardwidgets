@@ -4,6 +4,11 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-30
+### Measured and improved
+- Hub memory with a 10,014-picture library (release build, this PC, no accessibility client attached, single runs): hub web view 229 MB with the hub open on another page, 275 MB with the Wallpapers view open (+46 MB, inside the 80 MB target); while scrolling the whole grid again and again it peaks around 540 MB (almost all in the browser's GPU process, which gives memory back: 426 MB then 356 MB) and does not grow without bound over five passes. The hub's web view is released when the hub is closed. Using UI Automation to scroll inflated the numbers to 533 MB, so tests that need honest memory must not attach one (`PLINTH_HUBSCROLL`).
+- The grid reuses cards that stay in view and releases the picture of any card that scrolls away; thumbnails are served `no-store`.
+
 ## [0.12.0] - 2026-10-30
 Ready to hand to someone else.
 ### Added

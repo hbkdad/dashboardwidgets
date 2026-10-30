@@ -531,7 +531,8 @@ fn start_thumb_pool(lib: Arc<Mutex<Library>>) -> mpsc::Sender<ThumbJob> {
             let respond = |status: u16, body: Vec<u8>| {
                 let mut b = wry::http::Response::builder().status(status).header("X-Content-Type-Options", "nosniff");
                 if status == 200 {
-                    b = b.header("Content-Type", "image/jpeg").header("Cache-Control", "max-age=31536000, immutable");
+                    // no-store: the hub keeps only the pictures it is showing; the JPEG is read from our own disk cache again if it scrolls back
+                    b = b.header("Content-Type", "image/jpeg").header("Cache-Control", "no-store");
                 }
                 b.body(std::borrow::Cow::Owned(body)).unwrap()
             };
@@ -950,6 +951,17 @@ fn main() {
         std::thread::sleep(Duration::from_secs(30));
         let _ = tick.send_event(Ev::Save);
     });
+    if std::env::var_os("PLINTH_HUBSCROLL").is_some() {
+        // Memory test without any accessibility client attached (UI Automation makes the browser build accessibility trees, which
+        // inflates its memory): open the Wallpapers view and scroll the grid from inside the page.
+        let p = proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(8));
+            let _ = p.send_event(Ev::Auto(60));
+            std::thread::sleep(Duration::from_secs(40));
+            let _ = p.send_event(Ev::Auto(61));
+        });
+    }
     if autotest.is_some() {
         let p = proxy.clone();
         std::thread::spawn(move || {
@@ -1914,6 +1926,16 @@ fn main() {
                     }
                 }
                 21..=25 | 27..=29 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                60 => {
+                    if let Some(v) = &hub_view {
+                        let _ = v.evaluate_script("show('wallpapers')");
+                    }
+                }
+                61 => {
+                    if let Some(v) = &hub_view {
+                        let _ = v.evaluate_script("(()=>{let n=0;const g=document.getElementById('lgrid');const t=setInterval(()=>{const mx=g.scrollHeight-g.clientHeight;g.scrollTop=(g.scrollTop+g.clientHeight*0.8)%mx;if(++n>700)clearInterval(t)},100)})()");
+                    }
+                }
                 50..=56 => mood_snaps.push((app.st.scene.clone(), app.mood_current.clone(), app.suggestion.is_some(), app.st.mood_rules.len(), app.pending_card.is_some(), app.undo_placements.is_some())),
                 57 => {
                     let code = mood_report(&app, &mood_snaps);
