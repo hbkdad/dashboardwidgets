@@ -49,6 +49,14 @@ try {
   Invoke-ByName $w "Network" | Out-Null
   Start-Sleep -Milliseconds 600
   Check "Network view shows the proxy explanation" ([bool](Find-ByName $w "Widgets never talk to the internet directly."))
+  # --- security center ---
+  Invoke-ByName $w "Security" | Out-Null
+  Start-Sleep -Milliseconds 600
+  Check "Security Center says it is visibility, not an antivirus" (Wait-Until { $e = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -like "*visibility, not an antivirus*" } | Select-Object -First 1; [bool]$e } 6)
+  Invoke-ByName $w "Scan now" | Out-Null
+  Check "a scan completes and shows the Windows protection card" (Wait-Until { [bool](Find-ByName $w "Windows protection") } 25)
+  Check "the scan reports its duration" (Wait-Until { $e = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -like "Scanned in *" } | Select-Object -First 1; [bool]$e } 8)
+  Check "the connections table lists programs" (Wait-Until { [bool](Find-ByName $w "Connected to the internet right now") } 6)
   # --- wallpapers ---
   Invoke-ByName $w "Wallpapers" | Out-Null
   Start-Sleep -Milliseconds 600

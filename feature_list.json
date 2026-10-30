@@ -114,9 +114,10 @@
     },
     {
       "id": "F18",
-      "name": "Security Center (Windows security status, connections, startup items)",
-      "status": "not_started",
-      "evidence": "planned v0.9 (D22)"
+      "name": "Security Center (Windows security status, connections, listeners, startup items)",
+      "status": "partial",
+      "evidence": "autotest 20/20: 3 firewall profiles, Defender On/up to date, 7 listeners, 28 connections, 15 startup items read in 1.7 s; click test 37/37; ports cross-checked against netstat; hub escaping verified with hostile data",
+      "missing": "scheduled tasks and services, per-connection bytes, blocked-attempt log from Windows Firewall, file signature checks, Defender detections history; product-state decode UNVERIFIED"
     },
     {
       "id": "F19",

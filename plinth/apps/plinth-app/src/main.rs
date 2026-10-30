@@ -10,6 +10,7 @@
 //! PLINTH_AUTOTEST=<seconds> (apply, exercise, verify, print a report, exit with 0/1).
 
 mod hw;
+mod sec;
 mod state;
 mod win;
 
@@ -41,6 +42,7 @@ enum Ev {
     Menu(String),
     Pause(bool),
     Drop(Vec<PathBuf>),
+    Sec(String),
     DropHover(bool),
     Auto(u8),
 }
@@ -504,6 +506,13 @@ fn main() {
     let mut safe_count: (usize, usize) = (0, 0);
     let mut pause_log: Vec<bool> = Vec::new();
     let video_probe: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let mut sec_last: Option<Value> = None;
+    let sec_probe: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
+    if autotest.is_some() {
+        let sp = sec_probe.clone();
+        std::thread::spawn(move || *sp.lock().unwrap() = Some(sec::gather()));
+    }
+    let _ = &sec_last;
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
     let mut applied_before_start = app.st.applied;
@@ -578,6 +587,14 @@ fn main() {
                         app.sync_proxy();
                         reload = app.st.applied;
                         msg = Some(if app.st.safe { "Safe mode on. Widgets are paused and the network is closed.".into() } else { "Safe mode off.".into() });
+                    }
+                    "security_scan" => {
+                        // The scan runs off the event loop (PowerShell can take a few seconds); the result comes back as Ev::Sec.
+                        let p = proxy.clone();
+                        std::thread::spawn(move || {
+                            let _ = p.send_event(Ev::Sec(sec::gather().to_string()));
+                        });
+                        msg = Some("Scanning your PC's security status…".into());
                     }
                     "wallpaper" => {
                         let id = v.get("id").and_then(Value::as_str).unwrap_or("");
@@ -668,6 +685,27 @@ fn main() {
                 }
                 reply(&app, &hub_view, None);
             }
+            Event::UserEvent(Ev::Sec(json)) => {
+                // Add Plinth's own activity so the page shows everything in one place.
+                let mut v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
+                let entries = app.plog.lock().unwrap().entries();
+                let (mut perm_ok, mut perm_blocked) = (0usize, 0usize);
+                {
+                    let h = app.host.lock().unwrap();
+                    for w in h.describe() {
+                        for e in h.activity(&w.id) {
+                            if e.allowed { perm_ok += 1 } else { perm_blocked += 1 }
+                        }
+                    }
+                }
+                if let Value::Object(m) = &mut v {
+                    m.insert("plinth".into(), json!({ "proxyAllowed": entries.iter().filter(|e| e.verdict == Verdict::Allow).count(), "proxyBlocked": entries.iter().filter(|e| e.verdict != Verdict::Allow).count(), "permAllowed": perm_ok, "permBlocked": perm_blocked, "safe": app.st.safe }));
+                    sec_last = Some(v.clone());
+                }
+                if let Some(view) = &hub_view {
+                    let _ = view.evaluate_script(&format!("__onSecurity({})", v));
+                }
+            }
             Event::UserEvent(Ev::DropHover(on)) => {
                 if let Some(v) = &hub_view {
                     let _ = v.evaluate_script(&format!("__drop({on})"));
@@ -754,7 +792,7 @@ fn main() {
                     win::show_desktop();
                 }
                 _ => {
-                    let code = autotest_report(&app, auto_visible, safe_count, &sampler.snapshot(), &pause_log, &video_probe.lock().unwrap().clone());
+                    let code = autotest_report(&app, auto_visible, safe_count, &sampler.snapshot(), &pause_log, &video_probe.lock().unwrap().clone(), &sec_probe.lock().unwrap().clone());
                     app.persist();
                     std::process::exit(code);
                 }
@@ -777,7 +815,7 @@ fn total_activity(app: &App) -> usize {
     h.describe().iter().map(|w| h.activity(&w.id).len()).sum()
 }
 
-fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize), snap: &hw::Snapshot, pause_log: &[bool], video_probe: &Option<String>) -> i32 {
+fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize), snap: &hw::Snapshot, pause_log: &[bool], video_probe: &Option<String>, sec_probe: &Option<Value>) -> i32 {
     let h = app.host.lock().unwrap();
     println!("\n===== Permission Center log =====");
     let mut allowed: HashMap<String, Vec<String>> = HashMap::new();
@@ -817,6 +855,18 @@ fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize),
         .and_then(|v| v.as_str().map(String::from))
         .and_then(|inner| serde_json::from_str::<Value>(&inner).ok())
         .map_or(false, |v| v["paused"] == false && v["t"].as_f64().unwrap_or(0.0) > 0.0 && v["err"] == 0 && v["w"].as_u64().unwrap_or(0) > 0);
+    println!("\n===== Security Center probe =====");
+    if let Some(v) = sec_probe {
+        println!("   took {} ms, sockets {}, listeners {}, connections {}, startup items {}, security-center ok: {}", v["tookMs"], v["socketsTotal"], v["listeners"].as_array().map_or(0, |a| a.len()), v["connections"].as_array().map_or(0, |a| a.len()), v["startup"].as_array().map_or(0, |a| a.len()), v["scOk"]);
+        println!("   firewall: {}", v["firewall"]);
+        println!("   antivirus: {}", v["av"]);
+        for l in v["listeners"].as_array().into_iter().flatten() {
+            println!("   listener {}:{} {} (pid {})", l["bound"].as_str().unwrap_or(""), l["port"], l["proc"].as_str().unwrap_or(""), l["pid"]);
+        }
+    } else {
+        println!("   not taken");
+    }
+    let sec_ok = sec_probe.as_ref().map_or(false, |v| v["firewall"].as_array().map_or(false, |a| a.len() == 3 && a.iter().all(|p| p["on"].is_boolean())) && v["listeners"].as_array().map_or(false, |a| !a.is_empty() && a.iter().all(|l| l["port"].as_u64().map_or(false, |p| p > 0 && p < 65536))) && v["startup"].is_array() && v["socketsTotal"].as_u64().unwrap_or(0) > 0);
     let gpu_nvml = snap.gpu.as_ref().map_or(false, |g| g["source"] == "nvml");
     let checks = [
         ("pc vitals: CPU read allowed (granted at first run)", has(&allowed, "com.plinth.pcvitals", "use system.cpu")),
@@ -837,6 +887,7 @@ fn autotest_report(app: &App, visible: Option<bool>, safe_count: (usize, usize),
         ("wallpaper: nothing outside an allow-listed file type was ever requested successfully", wall_log.iter().all(|(p, st)| *st != 200 || plinth_core::wallpaper::mime_for(p.split('?').next().unwrap_or("")).is_some())),
         ("wallpaper: the dropped video was imported and streamed in byte ranges (206), or no video was supplied", !video_test || wall_log.iter().any(|(p, st)| p.contains("/user.") && *st == 206)),
         ("wallpaper: the video is playing after the governor paused and resumed it, or no video was supplied", !video_test || video_ok),
+        ("security: firewall profiles, listening ports and startup items were read without error", sec_ok),
         ("layer visible after Show Desktop (beacon pixel read at screen center)", visible == Some(true)),
     ];
     println!("\n===== Checks =====");

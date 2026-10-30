@@ -52,6 +52,10 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 .drop{margin-top:22px;border:1.5px dashed var(--bd2);border-radius:20px;padding:22px;display:flex;gap:16px;align-items:center;justify-content:space-between;background:rgba(255,255,255,.02);transition:border-color .15s,background .15s}
 .dropping .drop{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .dropov{position:fixed;inset:0;z-index:30;display:none;place-items:center;background:rgba(5,6,9,.78);backdrop-filter:blur(8px);font:600 1.6rem var(--disp);pointer-events:none}.dropping .dropov{display:grid}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:22px}
+.scard{padding:20px}.scard h2{margin-bottom:10px}.srow{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--bd);font-size:.875rem}.srow:last-child{border:0}.srow span:last-child{color:var(--mut);text-align:right}
+.tbl{width:100%;border-collapse:collapse;font-size:.8125rem;margin-top:8px}.tbl th{text-align:left;color:var(--mut);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--bd)}.tbl td{padding:6px 8px;border-bottom:1px dashed var(--bd);word-break:break-all}
+.note{margin-top:22px;padding:14px 18px;border:1px solid var(--bd2);border-radius:16px;background:rgba(138,180,255,.07);color:var(--mut);font-size:.8125rem}
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120px);background:var(--s3);border:1px solid var(--bd2);border-radius:16px;padding:12px 18px;transition:transform .3s var(--ease);z-index:9}.toast.on{transform:translate(-50%,0)}
 .modal{position:fixed;inset:0;background:rgba(5,6,9,.8);backdrop-filter:blur(10px);display:none;place-items:center;z-index:20;padding:20px}.modal.on{display:grid}.sheet{width:min(640px,100%);padding:32px}
 </style></head>
@@ -61,6 +65,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <div class="nav" id="nav">
 <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
 <button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
+<button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
 <button data-v="safety"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>Safety</button>
 <button data-v="network"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Network</button></div>
 <div class="sp"></div><button class="safe" id="safe" aria-pressed="false" title="Safe mode pauses all widgets and blocks all widget network access"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Safe mode<span id="safeS">Off</span></button></nav>
@@ -73,6 +78,12 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 <div class="pw" style="left:6%;bottom:12%;width:25%"><div style="font-weight:600">Notes</div><small>Type a note…</small></div></div>
 <div class="scenes" role="radiogroup" aria-label="Choose a scene" id="scenes"></div>
 <div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span> <span class="chip warn" id="pz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="sw" id="motion" role="switch" aria-checked="false" aria-label="Live motion wallpaper (uses more CPU)" title="Live motion wallpaper: uses noticeably more CPU and GPU; pauses in games"></button><span style="font-size:.8125rem;color:var(--mut)">Live motion</span><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
+
+<section class="view" id="v-security" aria-labelledby="hs"><div class="eb">Security Center</div><h1 id="hs">See what your PC is doing.</h1>
+<p class="lede">A clear look at your protection, what is connected to the internet, what is listening for connections, and what starts with Windows. Plinth reports facts and leaves the judgement to you.</p>
+<div class="note"><b>This is visibility, not an antivirus.</b> Plinth does not scan files and cannot tell you a program is safe or malicious. A program appearing here is not a sign of a problem by itself.</div>
+<div class="row mt"><button class="btn p" id="sscan">Scan now</button><span class="chip" id="sstat">Not scanned yet</span></div>
+<div class="sgrid" id="sgrid"></div></section>
 
 <section class="view" id="v-wallpapers" aria-labelledby="hw"><div class="eb">Wallpapers</div><h1 id="hw">Motion that respects your PC.</h1>
 <p class="lede">Live wallpapers run in a locked box: they can draw, but they cannot reach the internet, your files or your widgets. They pause by themselves during games, on low battery and in remote sessions.</p>
@@ -139,6 +150,29 @@ function render(){
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
   if(S.firstRun)$('#fr').classList.add('on');
 }
+let SEC=null;
+const rows=(a)=>a.map(([l,r])=>`<div class="srow"><span>${esc(l)}</span><span>${esc(r)}</span></div>`).join('')||'<div class="srow"><span>Nothing to show</span><span></span></div>';
+function renderSec(){
+  if(!SEC)return;const d=SEC,g=$('#sgrid');
+  const fw=d.firewall.map(p=>[p.profile,p.on===true?'On':p.on===false?'Off':'Unknown']);
+  const av=(d.av||[]).map(p=>[p.name,p.summary]);
+  const df=d.defender?[['Microsoft Defender',d.defender.av?'Enabled':'Disabled'],['Real-time protection',d.defender.rtp?'On':'Off'],['Definitions age',d.defender.sigAgeDays==null?'Unknown':d.defender.sigAgeDays+' days'],['Tamper protection',d.defender.tamper?'On':'Off']]:[];
+  const byProc={};(d.connections||[]).forEach(c=>{const k=c.proc+'\u0000'+c.pid;(byProc[k]=byProc[k]||{proc:c.proc,pid:c.pid,path:c.path,list:[]}).list.push(c)});
+  const procs=Object.values(byProc).sort((a,b)=>b.list.length-a.list.length);
+  const inet=(d.connections||[]).filter(c=>c.internet).length;
+  const reach=(d.listeners||[]).filter(l=>l.reachable);
+  const su=d.startup||[];const risky=su.filter(s=>s.userFolder).length;
+  const pl=d.plinth||{};
+  g.innerHTML=
+   `<div class="card scard"><h2>Windows protection</h2>${rows(fw)}<div style="height:8px"></div>${rows(av.concat(df))}${d.scOk?'':'<div class="srow"><span>Windows Security Center</span><span>could not be read</span></div>'}<p style="color:var(--mut);font-size:.75rem;margin-top:10px">Firewall values come from the local policy registry keys; antivirus status is what Windows Security Center reports.</p></div>`+
+   `<div class="card scard"><h2>Plinth's own activity</h2>${rows([['Widget requests allowed',pl.permAllowed],['Widget requests blocked',pl.permBlocked],['Network attempts allowed',pl.proxyAllowed],['Network attempts blocked',pl.proxyBlocked],['Safe mode',pl.safe?'On':'Off']])}<p style="color:var(--mut);font-size:.75rem;margin-top:10px">Details are in the Safety and Network views.</p></div>`+
+   `<div class="card scard" style="grid-column:1/-1"><h2>Connected to the internet right now</h2><div style="color:var(--mut);font-size:.8125rem">${inet} connections to public addresses from ${procs.filter(p=>p.list.some(c=>c.internet)).length} programs. Addresses are shown as numbers; Plinth does not look them up.</div><table class="tbl"><thead><tr><th>Program</th><th>Connected to</th><th>Where</th></tr></thead><tbody>${procs.flatMap(p=>p.list.map(c=>`<tr><td title="${esc(c.path)}">${esc(c.proc)}</td><td>${esc(c.remote)}</td><td>${esc(c.class)}</td></tr>`)).slice(0,200).join('')||'<tr><td colspan="3">No outgoing connections.</td></tr>'}</tbody></table></div>`+
+   `<div class="card scard" style="grid-column:1/-1"><h2>Listening for connections</h2><div style="color:var(--mut);font-size:.8125rem">${reach.length} of ${(d.listeners||[]).length} listening ports can be reached from other devices. Most are normal Windows services.</div><table class="tbl"><thead><tr><th>Program</th><th>Port</th><th>Reachable from</th></tr></thead><tbody>${(d.listeners||[]).map(l=>`<tr><td title="${esc(l.path)}">${esc(l.proc)}</td><td>${esc(l.port)}</td><td>${esc(l.exposure)}</td></tr>`).slice(0,200).join('')||'<tr><td colspan="3">Nothing is listening.</td></tr>'}</tbody></table></div>`+
+   `<div class="card scard" style="grid-column:1/-1"><h2>Starts with Windows</h2><div style="color:var(--mut);font-size:.8125rem">${su.length} items in the Run keys and Startup folders${risky?`; ${risky} run from your user folder, where any program you run can write`:''}. Scheduled tasks and services are not listed.</div><table class="tbl"><thead><tr><th>Name</th><th>For</th><th>Program</th><th>Where it lives</th></tr></thead><tbody>${su.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.scope)}</td><td title="${esc(x.command)}">${esc(x.path||x.command)}${x.exists?'':' <span class="chip warn">file not found</span>'}</td><td>${esc(x.where)}</td></tr>`).join('')||'<tr><td colspan="4">No startup items found.</td></tr>'}</tbody></table></div>`;
+  $('#sstat').textContent='Scanned in '+(d.tookMs/1000).toFixed(1)+' s';$('#sscan').disabled=false;$('#sscan').textContent='Scan again';
+}
+window.__onSecurity=(d)=>{SEC=d;renderSec()};
+$('#sscan').onclick=()=>{$('#sscan').disabled=true;$('#sstat').textContent='Scanning…';send('security_scan')};
 window.__drop=(on)=>document.body.classList.toggle('dropping',!!on);
 window.__onState=(s)=>{const prev=S;S=s;render();if(prev&&s.msg)toast(s.msg)};
 setInterval(()=>{const d=new Date();$('#pt').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},5000);

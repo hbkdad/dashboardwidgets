@@ -6,6 +6,7 @@ pub mod context;
 pub mod governor;
 pub mod impact;
 pub mod manifest;
+pub mod security;
 pub mod setup;
 pub mod wallpaper;
 
