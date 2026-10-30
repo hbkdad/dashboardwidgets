@@ -4,7 +4,15 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 
 ## [Unreleased]
 ### Added
-- Spike C scaffold: `plinth/spikes/sandbox-probe` (hostile-widget attacks against sandboxed iframes). Not yet run.
+- Spike C: `plinth/spikes/sandbox-probe` hostile-widget suite with a local test server and `RESULTS.md`.
+- Repo hygiene: `.gitignore`, `.gitattributes`, `CONTRIBUTING.md` (versioning, branches, commits, release steps), CI workflow (Windows: `cargo test -p plinth-core`, `cargo build --workspace`).
+### Changed
+- `design/architecture.md` security model updated with Spike C findings (sandbox alone insufficient; CSP plus host `frame-src`; process isolation or watchdog required).
+### Findings
+- Sandboxed iframe alone leaks network and remote code; sandbox + generated CSP + host `frame-src about:` blocked every tested channel.
+- A busy-loop widget starves the host and other widgets (7 of 8 runs); no CPU watchdog exists.
+### Known open items
+- Per-widget origin or process isolation, memory-bomb test, CPU watchdog design not yet tested.
 
 ## [0.0.1] - 2026-10-30
 Baseline: research, design, and first engineering spikes.

