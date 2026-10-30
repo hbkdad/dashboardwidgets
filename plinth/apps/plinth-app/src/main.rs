@@ -35,6 +35,7 @@ enum Ev {
     Layer { slot: usize, msg: String },
     Deliver { slot: usize, json: String },
     Save,
+    Menu(String),
     Auto(u8),
 }
 
@@ -214,6 +215,12 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, ctx: &mut WebCont
 }
 
 fn main() {
+    let instance = format!("Local\\PlinthApp-{}", std::env::var("PLINTH_STATE").unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>());
+    if !win::first_instance(&instance) {
+        println!("Plinth is already running; bringing its window to the front.");
+        let _ = win::activate_existing_hub();
+        return;
+    }
     let autotest: Option<u64> = std::env::var("PLINTH_AUTOTEST").ok().and_then(|s| s.parse().ok());
 
     // ---- state, host, widgets ----
@@ -284,6 +291,31 @@ fn main() {
         })
         .build(&hub_window)
         .expect("hub webview");
+    // Tray icon + menu (background mode: closing the hub hides it; Quit in the tray exits).
+    use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    let menu = Menu::new();
+    let mi_open = MenuItem::new("Open Plinth", true, None);
+    let mi_safe = MenuItem::new("Toggle Safe mode", true, None);
+    let mi_quit = MenuItem::new("Quit Plinth", true, None);
+    let _ = menu.append_items(&[&mi_open, &mi_safe, &PredefinedMenuItem::separator(), &mi_quit]);
+    let (id_open, id_safe, id_quit) = (mi_open.id().clone(), mi_safe.id().clone(), mi_quit.id().clone());
+    let _tray = tray_icon::Icon::from_rgba(win::tray_icon_rgba(), 32, 32)
+        .ok()
+        .and_then(|icon| tray_icon::TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Plinth").with_icon(icon).build().ok());
+    println!("tray icon: {}", if _tray.is_some() { "created" } else { "NOT created" });
+    {
+        let p = proxy.clone();
+        MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
+            let name = if e.id == id_open { "open" } else if e.id == id_safe { "safe" } else if e.id == id_quit { "quit" } else { return };
+            let _ = p.send_event(Ev::Menu(name.to_string()));
+        }));
+        let p2 = proxy.clone();
+        tray_icon::TrayIconEvent::set_event_handler(Some(move |e: tray_icon::TrayIconEvent| {
+            if let tray_icon::TrayIconEvent::DoubleClick { .. } = e {
+                let _ = p2.send_event(Ev::Menu("open".to_string()));
+            }
+        }));
+    }
     let mut layer_ctx = WebContext::new(Some(state::local_dir().join("wv-layer")));
     let mut layer: Option<Layer> = None;
 
@@ -352,11 +384,13 @@ fn main() {
                         } else {
                             layer = create_layer(target, &app, &mut layer_ctx, &proxy);
                         }
+                        println!("hub: apply {} (layer present: {})", app.st.scene, layer.is_some());
                         msg = Some(format!("Applied {}. Your previous desktop is restored with Revert.", scene(&app.st.scene).name));
                     }
                     "revert" => {
                         app.st.applied = false;
                         layer = None;
+                        println!("hub: revert");
                         msg = Some("Reverted. Your desktop is back to how it was.".into());
                     }
                     "grant" => {
@@ -381,7 +415,10 @@ fn main() {
                         reload = app.st.applied;
                         msg = Some(if app.st.safe { "Safe mode on. Widgets are paused and the network is closed.".into() } else { "Safe mode off.".into() });
                     }
-                    "firstrun_done" => app.st.first_run = false,
+                    "firstrun_done" => {
+                        app.st.first_run = false;
+                        println!("hub: first run acknowledged");
+                    }
                     _ => {}
                 }
                 if reload {
@@ -390,6 +427,7 @@ fn main() {
                     }
                 }
                 if cmd != "state" {
+                    println!("hub: {cmd} handled");
                     app.persist();
                 }
                 reply(&app, msg.as_deref());
@@ -404,6 +442,21 @@ fn main() {
                 }
             }
             Event::UserEvent(Ev::Save) => app.persist(),
+            Event::UserEvent(Ev::Menu(name)) => match name.as_str() {
+                "open" => {
+                    hub_window.set_visible(true);
+                    hub_window.set_minimized(false);
+                    hub_window.set_focus();
+                }
+                "safe" => {
+                    let on = !app.st.safe;
+                    let _ = proxy.send_event(Ev::Hub(json!({ "cmd": "safe", "on": on }).to_string()));
+                }
+                _ => {
+                    app.persist();
+                    *control_flow = ControlFlow::Exit;
+                }
+            },
             Event::UserEvent(Ev::Auto(step)) => match step {
                 5 => safe_count.0 = total_activity(&app),
                 6 => {
@@ -422,8 +475,10 @@ fn main() {
                 }
             },
             Event::WindowEvent { event: WindowEvent::CloseRequested, window_id, .. } if window_id == hub_id => {
+                // Background mode: hide the hub, keep the desktop layer and tray running. Quit from the tray menu.
                 app.persist();
-                *control_flow = ControlFlow::Exit;
+                hub_window.set_visible(false);
+                println!("hub hidden (running in the background; use the tray icon to reopen or quit)");
             }
             _ => {}
         }

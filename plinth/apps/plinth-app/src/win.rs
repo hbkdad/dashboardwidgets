@@ -26,6 +26,8 @@ extern "system" {
     fn GetDC(h: HWND) -> isize;
     fn ReleaseDC(h: HWND, dc: isize) -> i32;
     fn GetSystemMetrics(i: i32) -> i32;
+    fn ShowWindow(h: HWND, cmd: i32) -> i32;
+    fn SetForegroundWindow(h: HWND) -> i32;
 }
 #[link(name = "gdi32")]
 extern "system" {
@@ -35,6 +37,8 @@ extern "system" {
 extern "system" {
     fn GetSystemTimes(idle: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
     fn GlobalMemoryStatusEx(buf: *mut MemoryStatus) -> i32;
+    fn CreateMutexW(attrs: *const c_void, initial_owner: i32, name: *const u16) -> isize;
+    fn GetLastError() -> u32;
 }
 
 #[repr(C)]
@@ -147,4 +151,53 @@ pub fn probe_center_is(colorref: u32) -> bool {
         ReleaseDC(0, dc);
         hit >= 3
     }
+}
+
+/// Single instance: returns true if this is the first instance. The mutex handle is intentionally leaked for the process lifetime.
+pub fn first_instance(name: &str) -> bool {
+    unsafe {
+        let h = CreateMutexW(null(), 0, w(name).as_ptr());
+        h != 0 && GetLastError() != 183 // ERROR_ALREADY_EXISTS
+    }
+}
+
+/// Brings the already-running instance's hub window to the front (it may be hidden in the tray).
+pub fn activate_existing_hub() -> bool {
+    unsafe {
+        let h = FindWindowW(null(), w("Plinth").as_ptr());
+        if h == 0 {
+            return false;
+        }
+        ShowWindow(h, 5); // SW_SHOW
+        ShowWindow(h, 9); // SW_RESTORE
+        SetForegroundWindow(h);
+        true
+    }
+}
+
+/// 32x32 RGBA tray icon drawn in code (mint-to-blue rounded square with a dark center), no image assets needed.
+pub fn tray_icon_rgba() -> Vec<u8> {
+    let n = 32usize;
+    let mut px = vec![0u8; n * n * 4];
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = (x as f32 - 15.5, y as f32 - 15.5);
+            // rounded square mask
+            let (ax, ay) = (fx.abs() - 10.5, fy.abs() - 10.5);
+            let d = (ax.max(0.0).powi(2) + ay.max(0.0).powi(2)).sqrt() + ax.max(ay).min(0.0) - 4.0;
+            if d > 0.5 {
+                continue;
+            }
+            let t = (x + y) as f32 / (2.0 * n as f32);
+            let (r, g, b) = (124.0 * (1.0 - t) + 91.0 * t, 242.0 * (1.0 - t) + 140.0 * t, 200.0 * (1.0 - t) + 255.0 * t);
+            let inner = fx.abs() < 5.0 && fy.abs() < 5.0;
+            let i = (y * n + x) * 4;
+            let (r, g, b) = if inner { (11.0, 12.0, 15.0) } else { (r, g, b) };
+            px[i] = r as u8;
+            px[i + 1] = g as u8;
+            px[i + 2] = b as u8;
+            px[i + 3] = 255;
+        }
+    }
+    px
 }

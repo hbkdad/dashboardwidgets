@@ -1,19 +1,96 @@
 {
   "note": "Status is only 'done' with evidence. 'partial' states what is missing. Update in the same commit as the work.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "features": [
-    { "id": "F01", "name": "Manifest validation", "status": "done", "evidence": "plinth-core manifest tests" },
-    { "id": "F02", "name": "Permission broker (deny by default, grants, revoke, safe mode, activity log)", "status": "done", "evidence": "plinth-core broker tests; app autotest revoke/safe checks" },
-    { "id": "F03", "name": "Widget host: packages, isolated origins, generated CSP, bridge, storage quotas", "status": "done", "evidence": "plinth-host tests; host-demo 11/11" },
-    { "id": "F04", "name": "Deny-by-default network proxy", "status": "partial", "evidence": "plinth-proxy tests; app autotest 0 tunnels allowed", "missing": "HTTPS allow path from a widget, per-widget attribution, wss, WebView2 service traffic allow-list" },
-    { "id": "F05", "name": "Desktop layer behind icons (WebView2)", "status": "partial", "evidence": "Win+D pixel check passes on build 26300 (spikes, app autotest)", "missing": "lock/sleep/display/DPI/multi-monitor/other builds; icon z-order not verified" },
-    { "id": "F06", "name": "Hub app: scenes, apply/revert, Safety, Network, persistence", "status": "partial", "evidence": "hub JS rendered with stub state, 10/10 app autotest through hub command path", "missing": "real click-through test of the hub window, tray/background mode, autostart" },
-    { "id": "F07", "name": "First-party widgets: clock, system monitor, notes", "status": "done", "evidence": "app autotest: live CPU/RAM via broker, storage read" },
-    { "id": "F08", "name": "Setup Cards (validate, summarize, fit)", "status": "partial", "evidence": "plinth-core setup tests", "missing": "import/export UI, 60-second try-out, remix chain UI" },
-    { "id": "F09", "name": "Moods (context rules, learner)", "status": "partial", "evidence": "plinth-core context tests; prototype", "missing": "foreground-app/fullscreen/battery probes and hub UI in the real app" },
-    { "id": "F10", "name": "Impact Meter", "status": "partial", "evidence": "plinth-core impact tests; hub shows estimates", "missing": "live counters" },
-    { "id": "F11", "name": "Remix editor / visual builder", "status": "not_started", "evidence": "prototype only" },
-    { "id": "F12", "name": "Store, creator payouts, signing", "status": "not_started", "evidence": "design only" },
-    { "id": "F13", "name": "Installer, auto-update, code signing", "status": "not_started", "evidence": "none" }
+    {
+      "id": "F01",
+      "name": "Manifest validation",
+      "status": "done",
+      "evidence": "plinth-core manifest tests"
+    },
+    {
+      "id": "F02",
+      "name": "Permission broker (deny by default, grants, revoke, safe mode, activity log)",
+      "status": "done",
+      "evidence": "plinth-core broker tests; app autotest revoke/safe checks"
+    },
+    {
+      "id": "F03",
+      "name": "Widget host: packages, isolated origins, generated CSP, bridge, storage quotas",
+      "status": "done",
+      "evidence": "plinth-host tests; host-demo 11/11"
+    },
+    {
+      "id": "F04",
+      "name": "Deny-by-default network proxy",
+      "status": "partial",
+      "evidence": "plinth-proxy tests; app autotest 0 tunnels allowed",
+      "missing": "HTTPS allow path from a widget, per-widget attribution, wss, WebView2 service traffic allow-list"
+    },
+    {
+      "id": "F05",
+      "name": "Desktop layer behind icons (WebView2)",
+      "status": "partial",
+      "evidence": "Win+D pixel check passes on build 26300 (spikes, app autotest)",
+      "missing": "lock/sleep/display/DPI/multi-monitor/other builds; icon z-order not verified"
+    },
+    {
+      "id": "F06",
+      "name": "Hub app: scenes, apply/revert, Safety, Network, persistence, background mode, single instance",
+      "status": "done",
+      "evidence": "scripts/clicktest.ps1: 28/28 click checks on the real hub window, 4/4 runs; app autotest 10/10"
+    },
+    {
+      "id": "F07",
+      "name": "First-party widgets: clock, system monitor, notes",
+      "status": "done",
+      "evidence": "app autotest: live CPU/RAM via broker, storage read"
+    },
+    {
+      "id": "F08",
+      "name": "Setup Cards (validate, summarize, fit)",
+      "status": "partial",
+      "evidence": "plinth-core setup tests",
+      "missing": "import/export UI, 60-second try-out, remix chain UI"
+    },
+    {
+      "id": "F09",
+      "name": "Moods (context rules, learner)",
+      "status": "partial",
+      "evidence": "plinth-core context tests; prototype",
+      "missing": "foreground-app/fullscreen/battery probes and hub UI in the real app"
+    },
+    {
+      "id": "F10",
+      "name": "Impact Meter",
+      "status": "partial",
+      "evidence": "plinth-core impact tests; hub shows estimates",
+      "missing": "live counters"
+    },
+    {
+      "id": "F11",
+      "name": "Remix editor / visual builder",
+      "status": "not_started",
+      "evidence": "prototype only"
+    },
+    {
+      "id": "F12",
+      "name": "Store, creator payouts, signing",
+      "status": "not_started",
+      "evidence": "design only"
+    },
+    {
+      "id": "F13",
+      "name": "Installer, auto-update, code signing",
+      "status": "not_started",
+      "evidence": "none"
+    },
+    {
+      "id": "F14",
+      "name": "Tray icon and background mode",
+      "status": "partial",
+      "evidence": "icon created; closing the hub hides it; second launch restores it (click test)",
+      "missing": "tray menu items not click-tested; autostart"
+    }
   ]
 }

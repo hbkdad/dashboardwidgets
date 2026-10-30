@@ -13,7 +13,12 @@ Machine: Windows 11 Home build 26300, 28 logical cores, 1920x1080 single monitor
 7. Layer visible after Show Desktop: a beacon pixel at the screen center read magenta (pixel check on the composed screen).
 Also OBSERVED: restart restores an applied scene (`restored applied scene graphite (layer created: true)`).
 
-## Hub UI (OBSERVED, stubbed)
+## Real hub window click-through (OBSERVED): 28 of 28 checks, 4 of 4 final runs
+`scripts/clicktest.ps1` launches the app with an isolated state file and drives the real hub window through Windows UI Automation (WebView2 exposes its accessibility tree), then verifies effects in `state.json` and the app log: first-run sheet and dismissal, choosing a scene, Apply (state persisted, layer created, "Applied" chip and Revert enabled), Safety list, expanding a widget, revoking CPU (persisted), Safe mode on and off (persisted, button label changes), Network view, Close hides the hub while the app and layer keep running, a second launch exits at once and brings the hub back, Revert (persisted).
+Bugs this found and fixed: (1) the "Applied" chip showed before anything was applied (CSS `display` overrode the `hidden` attribute); (2) the hub rebuilt its whole widget and scene lists every 4 s, which could swallow a click and drop keyboard focus (an accessibility defect): regions now re-render only when their data changes. Earlier runs before fix 2 failed 1 of 5 times on the revoke step; after it, 10 of 10 runs passed. Console `?` characters in PowerShell output were a console-encoding artifact, confirmed by checking the U+00B7 code point in the element name.
+NOT tested here: the tray menu items themselves (only that the icon is created), human use, a screen reader, high-contrast mode.
+
+## Hub UI with stubbed state (OBSERVED)
 Loaded `hub.html` in a browser with a stubbed `window.ipc` and a sample state: 3 scenes, 3 widgets, first-run sheet, cost chip, log and proxy rows rendered; clicking a permission switch, Safe mode, Apply and a scene card sent the expected JSON commands; no console errors. A person (or UI automation) has NOT clicked the real hub window.
 
 ## Not tested
