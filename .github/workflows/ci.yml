@@ -16,7 +16,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: plinth
-      - name: Unit tests (core logic)
-        run: cargo test -p plinth-core
+      - name: Unit tests (core, host, proxy)
+        run: cargo test -p plinth-core -p plinth-host -p plinth-proxy
       - name: Build all crates (spikes compile)
         run: cargo build --workspace

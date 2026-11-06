@@ -1,6 +1,13 @@
 # Progress log (update at the end of every work session)
 
-## State as of 2026-10-30 (v0.12.0)
+## State as of 2026-11-06 (v0.13.1)
+- v0.13.0: Live Graphs widget; new first-party widgets are auto-granted what they declare. v0.13.1: no console window (GUI subsystem), rotating log, Settings diagnostics report, verify script waits for the app. v0.12.1: hub memory measured at 10k pictures.
+- Unit tests (2026-11-06, `cargo test --workspace`): 83 core, 25 host, 8 proxy, 19 app (3 ignored), all pass. App autotests, click test and release build NOT re-run in this audit.
+- Seelen UI hands-on test done: `research/seelen-ui-handson-test.md` (permission prompts exist and persist; coarse; idle about 1.3 GB WS on two monitors; Win+D did not hide its dock). PRD 1.1 updated.
+- CI now runs core, host and proxy tests (the app tests need a display and are run locally via `scripts/verify.ps1`).
+- Not published: zip is unsigned; `dist/` holds only the v0.11.0 build. Next: name clearance, code-signing certificate, clean-machine install test, Builds showcase, store design; multi-monitor docks, mixed DPI, virtual desktops, lock/sleep still NOT TESTED.
+
+## Earlier state (v0.12.0)
 - v0.12.0: packaging (`scripts/package.ps1`) and Start with Windows. Not published: the zip is unsigned. Next: name clearance, code-signing certificate, clean-machine install test, Builds showcase, store design.
 
 ## Earlier state (v0.11.0)
