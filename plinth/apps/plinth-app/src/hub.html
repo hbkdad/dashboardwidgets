@@ -88,6 +88,7 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="nav" id="nav">
 <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
 <button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
+<button data-v="skins"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="14" rx="5"/><path d="M8 20h9a4 4 0 0 0 4-4V9"/></svg>Skins</button>
 <button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
 <button data-v="monitors"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="12" height="9" rx="2"/><rect x="16" y="9" width="6" height="9" rx="2"/><path d="M6 18h4"/></svg>Monitors</button>
 <button data-v="moods"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M8 3.5l-2 2M16 3.5l2 2"/></svg>Moods</button>
@@ -114,6 +115,23 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="card" style="padding:20px"><h2>If a monitor is unplugged</h2><div class="pr"><div class="w"><b>Park widgets on</b><span>They return to their own monitor when it reconnects.</span></div><select id="mfallback" aria-label="Monitor for parked widgets"></select></div>
 <h2 style="margin-top:14px">Recovery</h2><div class="row mt" style="flex-wrap:wrap"><button class="btn" id="mparkall">Bring all widgets to the primary monitor</button><button class="btn g" id="mreset">Reset widget positions</button><button class="btn g" id="mundo" hidden>Undo reset</button></div>
 <p style="color:var(--mut);font-size:.8125rem;margin-top:10px">Bringing widgets to the primary monitor is temporary and never changes where you put them. Reset puts every widget back at its default place, and can be undone.</p></div></div></section>
+
+<section class="view" id="v-skins" aria-labelledby="hsk"><div class="eb">Skins</div><h1 id="hsk">Make every widget look like yours.</h1>
+<p class="lede">A skin changes how widgets look: glass color, frost, see-through amount, rounded corners, edge, shadow and font. It is only a few settings and never code, so a skin inside a shared setup card can do nothing but restyle your widgets. Pick one for everything, or give a single widget its own.</p>
+<div class="row mt" style="flex-wrap:wrap"><label style="font-size:.8125rem;color:var(--mut)">All widgets <select id="skglobal" aria-label="Skin for all widgets"></select></label><span class="chip" id="skwarn" hidden>Text may be hard to read with this skin</span></div>
+<div class="grid"><div class="card" style="padding:20px"><h2>Skins</h2><div id="sklist" role="radiogroup" aria-label="Skins" style="display:grid;gap:8px;margin-top:10px"></div><div class="row mt"><button class="btn" id="skcopy">Make a copy to edit</button><button class="btn g" id="skdel" hidden>Delete</button></div></div>
+<div class="card" style="padding:20px"><h2 id="skedtitle">Look</h2><p id="skedhint" style="color:var(--mut);font-size:.8125rem;margin-top:6px"></p><div id="skedit">
+<div class="fld"><label for="sk-name">Name</label><input type="text" id="sk-name" maxlength="40"></div>
+<div class="fld"><label for="sk-tint">Glass color</label><input type="color" id="sk-tint"><label style="min-width:0"><input type="checkbox" id="sk-tint-auto"> use the scene's</label></div>
+<div class="fld"><label for="sk-opacity">See-through</label><input type="range" id="sk-opacity" min="0" max="100"><span id="sk-opacity-v" style="min-width:3em"></span><label style="min-width:0"><input type="checkbox" id="sk-opacity-auto"> use the scene's</label></div>
+<div class="fld"><label for="sk-frost">Frost (blur)</label><input type="range" id="sk-frost" min="0" max="100"><span id="sk-frost-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-radius">Corners</label><input type="range" id="sk-radius" min="0" max="48"><span id="sk-radius-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-border">Edge light</label><input type="range" id="sk-border" min="0" max="100"><span id="sk-border-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-shadow">Shadow</label><input type="range" id="sk-shadow" min="0" max="100"><span id="sk-shadow-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-font">Font</label><select id="sk-font"></select></div>
+<div class="fld"><label for="sk-ink">Text color</label><select id="sk-ink"><option value="auto">Follow the scene</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+<div class="fld"><label for="sk-accent">Accent</label><input type="color" id="sk-accent"><label style="min-width:0"><input type="checkbox" id="sk-accent-auto"> use the scene's</label></div></div></div></div>
+<div class="card" style="padding:20px;margin-top:18px"><h2>Per widget</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A widget with its own skin ignores the one for all widgets. Widgets from other creators use the frame (glass, corners, edge, shadow); font and accent are applied by widgets that use Plinth's SDK.</p><div id="skwidgets" style="display:grid;gap:10px;margin-top:10px"></div></div></section>
 
 <section class="view" id="v-security" aria-labelledby="hs"><div class="eb">Security Center</div><h1 id="hs">See what your PC is doing.</h1>
 <p class="lede">A clear look at your protection, what is connected to the internet, what is listening for connections, and what starts with Windows. Plinth reports facts and leaves the judgement to you.</p>
@@ -221,7 +239,7 @@ function render(){
     S.wallpapers.forEach(w=>add(w.id,w.name,(w.kind==='video'?'Video':'Animated page')+(w.bundled?' · Plinth':' · Yours'),w.kind==='video'?'v':'',icon[w.kind]||'',!w.bundled))}
   const cw=S.wallpapers.find(w=>w.id===S.wallpaper);
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
-  renderFx();
+  renderFx();renderSkins();
   renderMon();
   renderLibState();
   renderMoods();renderSettings();
@@ -296,6 +314,7 @@ function renderMoods(){const m=S.moods;if(!m)return;
   const c=S.card,mod=$('#cardm');mod.classList.toggle('on',!!c);
   if(c){$('#cardt').textContent=c.name;const pr=Object.entries(c.permissions||{});
     $('#cardb').innerHTML=`<div style="color:var(--mut)">By ${esc(c.author)} · ${esc(c.widgets)} widgets on ${esc(c.monitors)} monitor${c.monitors>1?'s':''} · scene ${esc(c.scene)}${c.monitors>c.haveMonitors?`<br>You have ${esc(c.haveMonitors)} monitor${c.haveMonitors>1?'s':''}; the rest land on your primary.`:''}</div>
+    ${(c.skins||[]).length?`<div class="note"><b>Look:</b> this card brings ${c.skins.length} skin${c.skins.length>1?'s':''} (${c.skins.map(esc).join(', ')}). A skin only changes colors, frost, corners and font.</div>`:''}
     ${c.missing.length?`<div class="note"><b>Not installed, so skipped:</b> ${c.missing.map(esc).join(', ')}</div>`:''}
     <div class="mt"><b>Permissions these widgets can ask for</b> <span style="color:var(--mut);font-size:.8125rem">(nothing is allowed automatically; you decide in Safety)</span>${pr.length?pr.map(([k,v])=>`<div class="srow"><span>${esc(k)}</span><span>${v.map(esc).join(', ')}</span></div>`).join(''):'<div class="srow"><span>None</span><span></span></div>'}${(c.hosts||[]).length?`<div style="color:var(--mut);font-size:.8125rem;margin-top:6px">Internet hosts: ${c.hosts.map(esc).join(', ')}</div>`:''}</div>`}}
 function renderSettings(){$('#autostart').setAttribute('aria-checked',!!S.autostart);$('#aver').textContent=S.version||''}
@@ -367,6 +386,32 @@ function renderLibState(){if(!S.lib)return;renderFolders();if(L.rev!==S.lib.revi
   const ps=S.profiles||[],key=JSON.stringify(ps);if(L.pk!==key){L.pk=key;$('#plist').innerHTML=ps.map(n=>`<div class="row between"><b>${esc(n)}</b><span class="row"><button class="btn g" data-pa="${esc(n)}" aria-label="Apply profile ${esc(n)}">Apply</button><button class="btn g" data-pd="${esc(n)}" aria-label="Delete profile ${esc(n)}">Delete</button></span></div>`).join('')||'<span style="color:var(--mut);font-size:.8125rem">No profiles yet.</span>';
     $$('#plist [data-pa]').forEach(b=>b.onclick=()=>send('profile_apply',{name:b.dataset.pa}));$$('#plist [data-pd]').forEach(b=>b.onclick=()=>{if(confirm('Delete profile '+b.dataset.pd+'?'))send('profile_delete',{name:b.dataset.pd})})}
   if(L.sel&&(S.libSel||[]).length!==L.nsel){L.nsel=(S.libSel||[]).length;renderDetail()}}
+let skSel=null,skTimer=null;
+const skPreview=(s)=>{const v=s.vars||{};return `background:${v['--glass']};border-radius:${v['--radius']};border:1px solid ${v['--bd']};box-shadow:${v['--shadow']}`};
+function skEditable(){const s=(S.skins||[]).find(x=>x.id===skSel);return s&&!s.builtin?s:null}
+function skRead(){const g=(i)=>$('#'+i);const hex=(c)=>c;return {id:skSel,name:g('sk-name').value||'My skin',tint:g('sk-tint-auto').checked?null:g('sk-tint').value,opacity:g('sk-opacity-auto').checked?null:+g('sk-opacity').value,frost:+g('sk-frost').value,radius:+g('sk-radius').value,border:+g('sk-border').value,shadow:+g('sk-shadow').value,accent:g('sk-accent-auto').checked?null:g('sk-accent').value,ink:g('sk-ink').value,font:g('sk-font').value}}
+function skSave(){clearTimeout(skTimer);skTimer=setTimeout(()=>{if(skEditable())send('skin_save',{skin:skRead()})},180)}
+function renderSkins(){const L=S.skins;if(!L)return;
+  if(!skSel||!L.some(x=>x.id===skSel))skSel=S.skinGlobal;
+  if(S.skinLast&&S.skinLast!==R.skLast){R.skLast=S.skinLast;if(L.some(x=>x.id===S.skinLast))skSel=S.skinLast}
+  const ae=document.activeElement,typing=ae&&ae.closest&&ae.closest('#skedit')&&ae.tagName!=='SELECT';
+  const key=JSON.stringify([L,S.skinGlobal,S.skinWidget,S.placements&&S.placements.map(p=>[p.widget,p.name]),S.fonts,skSel]);if(R.sk===key)return;R.sk=key;
+  const opts=(sel)=>L.map(s=>`<option value="${esc(s.id)}" ${s.id===sel?'selected':''}>${esc(s.name)}</option>`).join('');
+  $('#skglobal').innerHTML=opts(S.skinGlobal);const gs=L.find(x=>x.id===S.skinGlobal);$('#skwarn').hidden=!(gs&&gs.hard);
+  $('#sklist').innerHTML=L.map(s=>`<button type="button" class="wchip" role="radio" aria-checked="${s.id===skSel}" data-sk="${esc(s.id)}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;margin:0;border-radius:14px;${s.id===skSel?'outline:2px solid var(--accent)':''}"><span style="width:54px;height:30px;flex:none;${skPreview(s)}"></span><span style="text-align:left;flex:1">${esc(s.name)}${s.builtin?'':' · yours'}${s.hard?' <span class="chip warn">hard to read</span>':''}</span></button>`).join('');
+  $$('#sklist [data-sk]').forEach(b=>b.onclick=()=>{skSel=b.dataset.sk;R.sk=null;renderSkins()});
+  const cur=L.find(x=>x.id===skSel),ed=!!(cur&&!cur.builtin);
+  $('#skedtitle').textContent=cur?cur.name:'Look';$('#skedhint').textContent=ed?'Changes show on your desktop as you make them.':'Built-in skins cannot be changed. Make a copy to edit.';$('#skdel').hidden=!ed;
+  $('#skedit').style.opacity=ed?1:.55;$$('#skedit input,#skedit select').forEach(e=>e.disabled=!ed);
+  if(cur&&!typing){$('#sk-name').value=cur.name;$('#sk-tint-auto').checked=!cur.tint;$('#sk-tint').value=cur.tint||'#14161f';$('#sk-opacity-auto').checked=cur.opacity==null;$('#sk-opacity').value=cur.opacity==null?42:cur.opacity;
+    for(const k of ['frost','radius','border','shadow'])$('#sk-'+k).value=cur[k];$('#sk-font').innerHTML=(S.fonts||[]).map(f=>`<option value="${esc(f.id)}" ${f.id===cur.font?'selected':''}>${esc(f.label)}</option>`).join('');$('#sk-ink').value=cur.ink;$('#sk-accent-auto').checked=!cur.accent;$('#sk-accent').value=cur.accent||'#7cf2c8';
+    for(const k of ['opacity','frost','radius','border','shadow'])$('#sk-'+k+'-v').textContent=$('#sk-'+k).value+(k==='radius'?' px':'%')}
+  $('#skwidgets').innerHTML=(S.placements||[]).map(p=>`<div class="row between"><b>${esc(p.name)}</b><select data-sw="${esc(p.widget)}" aria-label="Skin for ${esc(p.name)}"><option value="">Follow all widgets</option>${L.map(s=>`<option value="${esc(s.id)}" ${(S.skinWidget||{})[p.widget]===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>`).join('');
+  $$('#skwidgets select').forEach(e=>e.onchange=()=>send('skin_widget',{widget:e.dataset.sw,id:e.value}))}
+$('#skglobal').onchange=(e)=>send('skin_global',{id:e.target.value});
+$('#skcopy').onclick=()=>{const cur=(S.skins||[]).find(x=>x.id===skSel);if(!cur)return;const c=Object.assign({},cur,{id:'',name:(cur.name+' copy').slice(0,40)});delete c.builtin;delete c.vars;delete c.hard;send('skin_save',{skin:c})};
+$('#skdel').onclick=()=>{const cur=skEditable();if(cur&&confirm('Delete the skin "'+cur.name+'"? Widgets that use it follow the global skin.'))send('skin_delete',{id:cur.id})};
+$$('#skedit input,#skedit select').forEach(e=>{e.addEventListener('input',()=>{for(const k of ['opacity','frost','radius','border','shadow']){const o=$('#sk-'+k+'-v');if(o)o.textContent=$('#sk-'+k).value+(k==='radius'?' px':'%')}skSave()});e.addEventListener('change',skSave)});
 function renderFx(){const f=S.fx;if(!f)return;const key=JSON.stringify([f,S.overlays]);if(R.fx===key)return;R.fx=key;
   $('#fxid').innerHTML='<option value="">None</option>'+(S.overlays||[]).map(o=>`<option value="${esc(o.id)}" ${o.id===f.id?'selected':''}>${esc(o.name)}</option>`).join('');
   $('#fxint').value=String(f.intensity);$('#fxspd').value=String(f.speed);if($('#fxspd').value!==String(f.speed)){const o=document.createElement('option');o.value=o.textContent=f.speed+'%';$('#fxspd').appendChild(o);$('#fxspd').value=String(f.speed)}

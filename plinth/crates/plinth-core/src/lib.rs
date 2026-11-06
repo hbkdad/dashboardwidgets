@@ -13,6 +13,7 @@ pub mod motion;
 pub mod placement;
 pub mod security;
 pub mod setup;
+pub mod skin;
 pub mod wallpaper;
 
 pub use broker::{ActivityEntry, Broker, Decision, DenyReason};

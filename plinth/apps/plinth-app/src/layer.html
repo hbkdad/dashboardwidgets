@@ -12,14 +12,27 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 @keyframes drift{from{transform:scale(1.02) translate(0,0)}to{transform:scale(1.06) translate(-1.2%,-1%)}}
 @media (prefers-reduced-motion:reduce){.wall{animation:none}}
 .paused .wall{animation-play-state:paused}
-.slot{position:fixed;border-radius:22px;overflow:hidden;background:__GLASS__;backdrop-filter:blur(22px) saturate(1.35);border:1px solid rgba(255,255,255,.16);box-shadow:0 20px 60px rgba(0,0,0,.30)}
+.slot{position:fixed;border-radius:var(--radius,22px);overflow:hidden;background:var(--glass,__GLASS__);backdrop-filter:blur(var(--blur,22px)) saturate(1.35);border:1px solid var(--bd,rgba(255,255,255,.16));box-shadow:var(--shadow,0 20px 60px rgba(0,0,0,.30))}
 .slot iframe{width:100%;height:100%;border:0;background:transparent;color-scheme:normal}
 </style></head>
 <body><div class="wall"></div>__WALLPAPER____OVERLAY__<div class="mid"></div><div class="scrim"></div><div class="grain"></div><div id="slots"></div>__BANNER____BEACON__
 <script>
 // Trusted layer page. A message's identity is the iframe it came from, never anything inside the message.
 const widgets = __WIDGETS__;
-const frames = {};   // widget id -> { frame, origin }
+const frames = {};   // widget id -> { frame, origin, slot, skin }
+// Skins (D37) are data: CSS custom properties for the frame (built by the host from validated numbers) and ink, accent and font that the
+// widget's own SDK applies when it receives them. A widget without the SDK simply keeps its own look.
+function sendSkin(fr) {
+  const sk = fr && fr.skin;
+  if (!sk || !fr.frame.contentWindow) return;
+  try { fr.frame.contentWindow.postMessage({ plinthSkin: { ink: sk.ink, accent: '#' + sk.accent, font: sk.font } }, fr.origin); } catch (_) {}
+}
+function applySkin(fr, sk) {
+  if (!sk) return;
+  fr.skin = sk;
+  for (const [k, v] of Object.entries(sk.vars)) fr.slot.style.setProperty(k, v);
+  sendSkin(fr);
+}
 for (const w of widgets) {
   const pos = { left: w.x, top: w.y, width: w.w, height: w.h };
   const d = document.createElement('div');
@@ -29,10 +42,12 @@ for (const w of widgets) {
   f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
   f.title = w.id;
   const origin = 'http://' + (w.trusted ? 'pwt' : 'pw' + w.slot) + '.localhost';
-  f.src = origin + (w.trusted ? '/' + (w.base || w.id) + '/index.html' : '/') + '?ink=__INK__&accent=__ACCENT__';
+  f.src = origin + (w.trusted ? '/' + (w.base || w.id) + '/index.html' : '/') + '?ink=' + (w.skin ? w.skin.ink : '__INK__') + '&accent=' + (w.skin ? w.skin.accent : '__ACCENT__');
   d.appendChild(f);
   document.getElementById('slots').appendChild(d);
   frames[w.id] = { frame: f, origin, slot: d };
+  f.addEventListener('load', () => sendSkin(frames[w.id]));
+  applySkin(frames[w.id], w.skin);
 }
 addEventListener('message', (e) => {
   for (const [id, fr] of Object.entries(frames)) {
@@ -59,6 +74,6 @@ window.__pause = (on) => {
   }
 };
 // Widgets moved by the user (edit layout): apply the new places without reloading anything.
-window.__layout = (list) => { for (const w of list) { const fr = frames[w.id]; if (fr) for (const [k, v] of Object.entries({ left: w.x, top: w.y, width: w.w, height: w.h })) fr.slot.style[k] = v + 'px'; } };
+window.__layout = (list) => { for (const w of list) { const fr = frames[w.id]; if (!fr) continue; for (const [k, v] of Object.entries({ left: w.x, top: w.y, width: w.w, height: w.h })) fr.slot.style[k] = v + 'px'; applySkin(fr, w.skin); } };
 window.__deliver = (id, resp) => { const fr = frames[id]; if (fr) fr.frame.contentWindow.postMessage(resp, fr.origin); };
 </script></body></html>

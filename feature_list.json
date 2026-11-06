@@ -153,6 +153,13 @@
       "status": "partial",
       "evidence": "2026-11-06: overlay autotest 14/14 (sandboxed iframe with only two numbers in its query, served 200, loaded in the live layer, yields to a live wallpaper with the reason shown, governor unloads and reloads it, amount and speed change the query and the cost, refused as a wallpaper, none in Safe mode); core tests (9 motion, 1 wallpaper kind) and a host CSP test; cost measured once per overlay on this PC (RESULTS.md)",
       "missing": "CPU figures are noisy single runs and the covered case did not drop to about 0 (NOT explained); GPU load NOT measured; overlay is drawn on the primary monitor only; the look of the four overlays was not reviewed by screenshot; no import of user overlays (bundled only); not tested on battery, in a real game or in a remote session"
+    },
+    {
+      "id": "F24",
+      "name": "Custom skins (data-only look tokens: global and per widget, in setup cards, hub editor)",
+      "status": "partial",
+      "evidence": "2026-11-06: skins autotest 11/11 on this PC (live layer computed styles match the skin: 30 px corners, rgba(16,32,48,0.7), blur 32 px; per-widget override; bad skins and hostile cards refused; export card parses strictly and holds no CSS characters; import under a new id without overwriting; Undo; delete falls back to default); 17 skin and card tests in plinth-core; one screenshot showed Terminal (monospace), Paper card (serif, Notes) and Soft pill (clock) on the real desktop",
+      "missing": "font, ink and accent delivery to widgets is OBSERVED once by screenshot, not asserted by a test; the hub editor was not click-tested (its commands are tested); hard-to-read warning is a WCAG ratio, not tested on people; widgets without Plinth's SDK keep their own font and accent; no per-monitor skins; skins are not in the hub's live preview of scenes"
     }
   ]
 }

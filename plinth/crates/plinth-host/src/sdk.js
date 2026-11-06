@@ -4,6 +4,16 @@
   window.addEventListener('message', (e) => {
     if (e.source !== parent) return;
     const r = e.data || {};
+    // Presentation only, sent by the trusted layer page: the widget's skin (ink, accent, font). No code and no data flow back.
+    if (r.plinthSkin) {
+      const k = r.plinthSkin, de = document.documentElement;
+      if (k.ink === 'light' || k.ink === 'dark') de.dataset.ink = k.ink;
+      if (typeof k.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(k.accent)) de.style.setProperty('--accent', k.accent);
+      const f = typeof k.font === 'string' && k.font.length < 160 ? k.font : '';
+      de.style.setProperty('--plinth-font', f);
+      if (document.body) document.body.style.fontFamily = f;
+      return;
+    }
     const p = pending.get(r.id);
     if (!p) return;
     pending.delete(r.id);

@@ -6,7 +6,7 @@
 # -Click also click-tests the real hub window through UI Automation (about 40 s, shows the desktop layer).
 # Runs unit/socket tests and builds the whole workspace; with -App also runs the app's end-to-end autotest
 # (applies a full-screen desktop layer for ~30 s and sends Win+D; do not run while presenting).
-param([switch]$App, [switch]$Click, [switch]$Monitors, [switch]$Library, [switch]$Moods, [switch]$Drag, [switch]$Overlay)
+param([switch]$App, [switch]$Click, [switch]$Monitors, [switch]$Library, [switch]$Moods, [switch]$Drag, [switch]$Overlay, [switch]$Skins)
 $ErrorActionPreference = "Stop"
 # The app is a GUI program: PowerShell does not wait for it or fill $LASTEXITCODE when called with &, so start it, wait, show its output, return its exit code.
 function Run-App {
@@ -71,8 +71,17 @@ try {
     Remove-Item Env:PLINTH_AUTOTEST_FX -ErrorAction SilentlyContinue
     if ($code -ne 0) { throw "motion overlay test failed" }
   }
+  if ($Skins) {
+    $env:PLINTH_STATE = Join-Path $env:TEMP "plinth-verify-skin-state.json"; Remove-Item $env:PLINTH_STATE -ErrorAction SilentlyContinue
+    $env:PLINTH_CARDS = Join-Path $env:TEMP "plinth-verify-skin-cards"; Remove-Item $env:PLINTH_CARDS -Recurse -Force -ErrorAction SilentlyContinue
+    $env:PLINTH_LIBRARY = Join-Path $env:TEMP "plinth-verify-skin-lib\library.json"; $env:PLINTH_USER_WALLPAPERS = Join-Path $env:TEMP "plinth-verify-skin-walls"
+    $env:PLINTH_AUTOTEST = "60"; $env:PLINTH_AUTOTEST_SKIN = "1"
+    $code = Run-App
+    Remove-Item Env:PLINTH_AUTOTEST_SKIN, Env:PLINTH_CARDS -ErrorAction SilentlyContinue
+    if ($code -ne 0) { throw "skins test failed" }
+  }
   if ($Drag) {
-    Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_FX, Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
+    Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_FX, Env:PLINTH_AUTOTEST_SKIN, Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
     & "$PSScriptRoot\dragtest.ps1"
     if ($LASTEXITCODE -ne 0) { throw "drag test failed" }
   }
