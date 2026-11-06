@@ -1,5 +1,9 @@
 # Progress log (update at the end of every work session)
 
+## Security fix 2026-11-06 (branch `fix/ipc-identity`, not merged)
+- Done: IPC secret + navigation guard (D38), tests and `verify.ps1 -Ipc`. Full verify passed on this PC: tests, autotest 21/21, monitors 17/17, moods 11/11, skins 14/14, overlay 11/11, drag 14/14, ipc 6/6, click 59/59, background 3/3, log 3/3. Library test and lock/sleep NOT re-run on this build. The one unexplained drag-test failure from the feature session did not recur in this run (single run, still unexplained).
+- Still open from the once-over: first-party trust by id prefix, clippy (about 99 warnings), no `cargo audit`, CI too thin.
+
 ## v0.14.0 feature work 2026-11-06 (chained branches feat/drag-placement -> feat/motion-overlays -> feat/skins; release commit on feat/skins; NOT merged, NOT tagged, NOT pushed)
 - Final full run with all three features: tests 128 core / 27 host / 8 proxy / 19 app; autotest 21/21; monitors 17/17; Moods 11/11; overlays 14/14; skins 11/11; drag 14/14; click 59/59; background 3/3; log 3/3. Library end-to-end and lock/sleep NOT re-run. One drag-stage failure (8/14) in one full chain, 15 other runs passed; cause not found (first drag was not registered; candidates: the overlay not yet interactive right after the previous app exits, Win+D state left by the autotest).
 - To publish: merge the three branches in order, then `git tag -a v0.14.0 -m "..."` on main and push with tags (CONTRIBUTING.md). Nothing was pushed.

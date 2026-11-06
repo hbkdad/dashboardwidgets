@@ -3,10 +3,11 @@
 # -Library runs the picture library end to end on your REAL monitors: it sets a test picture as the wallpaper of the primary monitor and then
 #   reverts; Windows' own record of your wallpapers is compared before and after (it writes the safety snapshot to the state file first).
 # -Drag drags widgets on your real desktop with the REAL mouse (scripts/dragtest.ps1, about 25 s; do not touch the mouse meanwhile).
+# -Ipc runs the widget-frame IPC identity test (an evil third-party widget must not reach the app as a widget; shows the layer ~25 s).
 # -Click also click-tests the real hub window through UI Automation (about 40 s, shows the desktop layer).
 # Runs unit/socket tests and builds the whole workspace; with -App also runs the app's end-to-end autotest
 # (applies a full-screen desktop layer for ~30 s and sends Win+D; do not run while presenting).
-param([switch]$App, [switch]$Click, [switch]$Monitors, [switch]$Library, [switch]$Moods, [switch]$Drag, [switch]$Overlay, [switch]$Skins)
+param([switch]$App, [switch]$Click, [switch]$Monitors, [switch]$Library, [switch]$Moods, [switch]$Drag, [switch]$Overlay, [switch]$Skins, [switch]$Ipc)
 $ErrorActionPreference = "Stop"
 # The app is a GUI program: PowerShell does not wait for it or fill $LASTEXITCODE when called with &, so start it, wait, show its output, return its exit code.
 function Run-App {
@@ -84,6 +85,11 @@ try {
     Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_FX, Env:PLINTH_AUTOTEST_SKIN, Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
     & "$PSScriptRoot\dragtest.ps1"
     if ($LASTEXITCODE -ne 0) { throw "drag test failed" }
+  }
+  if ($Ipc) {
+    Remove-Item Env:PLINTH_AUTOTEST, Env:PLINTH_AUTOTEST_FX, Env:PLINTH_AUTOTEST_SKIN, Env:PLINTH_AUTOTEST_MOODS, Env:PLINTH_AUTOTEST_MON, Env:PLINTH_AUTOTEST_LIB, Env:PLINTH_FAKE_MONITORS, Env:PLINTH_TEST_VIDEO -ErrorAction SilentlyContinue
+    & "$PSScriptRoot\ipctest.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "ipc identity test failed" }
   }
   if ($Click) {
     # the earlier stages set test switches; the click test must start the app normally
