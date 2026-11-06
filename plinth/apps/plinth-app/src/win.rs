@@ -29,6 +29,14 @@ extern "system" {
     fn IsWindowVisible(h: HWND) -> i32;
     fn ShowWindow(h: HWND, cmd: i32) -> i32;
     fn SetForegroundWindow(h: HWND) -> i32;
+    fn SetLayeredWindowAttributes(h: HWND, key: u32, alpha: u8, flags: u32) -> i32;
+    fn SetWindowRgn(h: HWND, rgn: isize, redraw: i32) -> i32;
+}
+#[link(name = "gdi32")]
+extern "system" {
+    fn CreateRectRgn(l: i32, t: i32, r: i32, b: i32) -> isize;
+    fn CombineRgn(dst: isize, a: isize, b: isize, mode: i32) -> i32;
+    fn DeleteObject(o: isize) -> i32;
 }
 #[link(name = "gdi32")]
 extern "system" {
@@ -92,6 +100,33 @@ pub fn attach_to_desktop(hwnd: isize, x: i32, y: i32, width: i32, height: i32) -
 
 #[allow(dead_code)]
 fn _unused(_: *const c_void) {}
+
+/// Edit-layout overlay window: a uniformly translucent (layered) window, so the widget underneath stays visible through it.
+pub fn make_translucent(hwnd: isize, alpha: u8) {
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | 0x0008_0000); // WS_EX_LAYERED
+        SetLayeredWindowAttributes(hwnd, 0, alpha, 2); // LWA_ALPHA
+    }
+}
+
+/// Shape a window to the union of rectangles (left, top, right, bottom in window pixels). Pixels outside the shape are not part of the
+/// window at all: mouse clicks there go to whatever is underneath (the desktop icons). An empty list removes the shape.
+pub fn set_region(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
+    unsafe {
+        if rects.is_empty() {
+            SetWindowRgn(hwnd, 0, 1);
+            return;
+        }
+        let all = CreateRectRgn(0, 0, 0, 0);
+        for &(l, t, r, b) in rects {
+            let one = CreateRectRgn(l, t, r, b);
+            CombineRgn(all, all, one, 2); // RGN_OR
+            DeleteObject(one);
+        }
+        SetWindowRgn(hwnd, all, 1); // the system owns the region from here on
+    }
+}
 
 /// Autotest helper: sends Win+D (Show Desktop toggle).
 pub fn show_desktop() {

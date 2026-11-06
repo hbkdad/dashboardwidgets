@@ -31,7 +31,7 @@ for (const w of widgets) {
   f.src = origin + (w.trusted ? '/' + (w.base || w.id) + '/index.html' : '/') + '?ink=__INK__&accent=__ACCENT__';
   d.appendChild(f);
   document.getElementById('slots').appendChild(d);
-  frames[w.id] = { frame: f, origin };
+  frames[w.id] = { frame: f, origin, slot: d };
 }
 addEventListener('message', (e) => {
   for (const [id, fr] of Object.entries(frames)) {
@@ -54,5 +54,7 @@ window.__pause = (on) => {
     else if (fr.src) { fr.frame.src = fr.src; }
   }
 };
+// Widgets moved by the user (edit layout): apply the new places without reloading anything.
+window.__layout = (list) => { for (const w of list) { const fr = frames[w.id]; if (fr) for (const [k, v] of Object.entries({ left: w.x, top: w.y, width: w.w, height: w.h })) fr.slot.style[k] = v + 'px'; } };
 window.__deliver = (id, resp) => { const fr = frames[id]; if (fr) fr.frame.contentWindow.postMessage(resp, fr.origin); };
 </script></body></html>

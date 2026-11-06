@@ -61,6 +61,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 .mon.pri{border-color:var(--accent)}.mon.over{box-shadow:0 0 0 3px var(--accent)}.mon.target{cursor:pointer;border-style:dashed}
 .mon .no{position:absolute;right:8px;bottom:2px;font:700 2.2rem/1 var(--disp);opacity:.25}.mon .mn{font-size:.6875rem;color:var(--mut);display:block;max-width:80%}
 .wchip{display:inline-block;margin:2px 3px 0 0;padding:2px 8px;border-radius:8px;border:1px solid var(--bd2);background:var(--s3);font-size:.6875rem;touch-action:none;cursor:grab}
+.wchip.pos{position:absolute;margin:0;padding:0 4px;display:grid;place-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;box-sizing:border-box;border-radius:5px;background:var(--s3);line-height:1.1}.wchip.drag{z-index:5;opacity:.85;box-shadow:0 0 0 2px var(--accent)}.wchip.locked{cursor:not-allowed}
 .wchip.parked{border-style:dashed;color:var(--amb);border-color:var(--amb)}.wchip.sel{outline:2px solid var(--accent)}.ghost{position:fixed;z-index:50;pointer-events:none;opacity:.9}
 .mcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:22px}.mcard{padding:18px}
 select{font:inherit;color:var(--tx);background:var(--s3);border:1px solid var(--bd2);border-radius:10px;padding:6px 10px;max-width:100%}
@@ -105,8 +106,8 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span> <span class="chip warn" id="pz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="sw" id="motion" role="switch" aria-checked="false" aria-label="Live motion wallpaper (uses more CPU)" title="Live motion wallpaper: uses noticeably more CPU and GPU; pauses in games"></button><span style="font-size:.8125rem;color:var(--mut)">Live motion</span><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
 
 <section class="view" id="v-monitors" aria-labelledby="hm"><div class="eb">Monitors</div><h1 id="hm">Every widget, exactly where you want it.</h1>
-<p class="lede">Your screens as Windows arranges them. Drag a widget onto a monitor, or click a widget and then a monitor. If a monitor is unplugged, its widgets wait on another screen and return by themselves.</p>
-<div class="row mt"><button class="btn" id="midentify">Identify monitors</button><span class="chip" id="mfake" hidden>Test monitors</span></div>
+<p class="lede">Your screens as Windows arranges them. Drag a widget in the diagram to place it exactly, or press Edit layout and drag it on your real desktop (it snaps to edges and a grid). You can also click a widget and then a monitor. If a monitor is unplugged, its widgets wait on another screen and return by themselves.</p>
+<div class="row mt" style="flex-wrap:wrap"><button class="btn p" id="medit" aria-pressed="false">Edit layout on my desktop</button><label style="font-size:.8125rem;color:var(--mut)">Snap <select id="msnap" aria-label="Snapping"><option value="both">Edges and grid</option><option value="edges">Edges only</option><option value="grid">Grid only</option><option value="off">Off</option></select></label><label style="font-size:.8125rem;color:var(--mut)">Grid <select id="mgrid" aria-label="Grid size"><option value="12">12</option><option value="24">24</option><option value="48">48</option><option value="96">96</option></select></label><button class="btn" id="midentify">Identify monitors</button><span class="chip" id="mfake" hidden>Test monitors</span></div>
 <div class="mdiag" id="mdiag" role="group" aria-label="Monitor layout"></div>
 <div class="mcards" id="mcards"></div>
 <div class="grid"><div class="card" style="padding:20px"><h2>Widgets</h2><div id="mwidgets" class="mt" style="display:grid;gap:10px"></div></div>
@@ -249,12 +250,12 @@ let selW=null,drag=null;
 function sendAssign(w,m){send('assign',{widget:w,monitor:m});selW=null}
 function renderMon(){
   const M=S.monitors||[];if(!M.length)return;
-  const key=JSON.stringify([S.monitors,S.placements,S.wallpapers,S.fallback,S.parkAll,S.canUndo,selW]);if(R.mon===key)return;R.mon=key;
-  $('#mfake').hidden=!S.fakeMonitors;
+  const key=JSON.stringify([S.monitors,S.placements,S.wallpapers,S.fallback,S.parkAll,S.canUndo,S.snap,S.editing,selW]);if(R.mon===key)return;R.mon=key;
+  $('#mfake').hidden=!S.fakeMonitors;$('#medit').textContent=S.editing?'Finish editing':'Edit layout on my desktop';$('#medit').setAttribute('aria-pressed',!!S.editing);if(S.snap){$('#msnap').value=S.snap.mode;$('#mgrid').value=String(S.snap.grid);if($('#mgrid').value!==String(S.snap.grid)){const o=document.createElement('option');o.value=o.textContent=S.snap.grid;$('#mgrid').appendChild(o);$('#mgrid').value=String(S.snap.grid)}}
   const minx=Math.min(...M.map(m=>m.x)),miny=Math.min(...M.map(m=>m.y)),maxx=Math.max(...M.map(m=>m.x+m.w)),maxy=Math.max(...M.map(m=>m.y+m.h)),W=maxx-minx,H=maxy-miny;
   const box=$('#mdiag');box.style.setProperty('--ar',(W/H).toFixed(3));
   const pct=(v,t)=>(100*v/t).toFixed(3)+'%';
-  box.innerHTML=M.map(m=>{const chips=(S.placements||[]).filter(p=>p.monitor===m.id).map(p=>`<span class="wchip ${p.parked?'parked':''} ${selW===p.widget?'sel':''}" data-w="${esc(p.widget)}" role="button" tabindex="0" aria-label="${esc(p.name)}${p.parked?' (parked, waiting for its monitor)':''}">${esc(p.name)}${p.parked?' ·parked':''}</span>`).join('');
+  box.innerHTML=M.map(m=>{const chips=(S.placements||[]).filter(p=>p.monitor===m.id).map(p=>{const r=p.rect,pos=r?`style="left:${pct(r[0],m.wd)};top:${pct(r[1],m.hd)};width:${pct(r[2],m.wd)};height:${pct(r[3],m.hd)}"`:'';return `<span class="wchip ${r?'pos':''} ${p.parked?'parked':''} ${p.locked?'locked':''} ${selW===p.widget?'sel':''}" data-w="${esc(p.widget)}" ${pos} role="button" tabindex="0" aria-label="${esc(p.name)}${p.parked?' (parked, waiting for its monitor)':''}">${esc(p.name)}${p.parked?' ·parked':''}</span>`}).join('');
     return `<div class="mon ${m.primary?'pri':''} ${selW?'target':''}" data-id="${esc(m.id)}" style="left:${pct(m.x-minx,W)};top:${pct(m.y-miny,H)};width:${pct(m.w,W)};height:${pct(m.h,H)}"><span class="mn">${esc(m.name)}${m.primary?' ★':''}</span>${chips}<span class="no">${esc(m.n)}</span></div>`}).join('');
   $('#mcards').innerHTML=M.map(m=>`<div class="card mcard"><div class="row between"><b>${esc(m.n)} · ${esc(m.name)}</b>${m.primary?'<span class="chip ok">Primary</span>':''}</div>
     <div class="srow"><span>Resolution</span><span>${esc(m.w)} × ${esc(m.h)} (${m.portrait?'portrait':'landscape'})</span></div><div class="srow"><span>Scale</span><span>${esc(m.scale)}%</span></div><div class="srow"><span>Refresh rate</span><span>${m.hz?esc(m.hz)+' Hz':'unknown'}</span></div>
@@ -266,15 +267,17 @@ function renderMon(){
   const fb=$('#mfallback');fb.innerHTML=`<option value="">Primary monitor</option>`+M.map(m=>`<option value="${esc(m.id)}" ${S.fallback===m.id?'selected':''}>${esc(m.n)} · ${esc(m.name)}</option>`).join('');fb.onchange=()=>send('fallback',{monitor:fb.value});
   $('#mparkall').textContent=S.parkAll?'Return widgets to their monitors':'Bring all widgets to the primary monitor';$('#mundo').hidden=!S.canUndo;
 }
-$('#midentify').onclick=()=>send('identify');$('#mparkall').onclick=()=>send('park_all',{on:!S.parkAll});$('#mreset').onclick=()=>send('reset_positions');$('#mundo').onclick=()=>send('undo_positions');
+$('#midentify').onclick=()=>send('identify');$('#medit').onclick=()=>send('edit_layout',{on:!S.editing});$('#msnap').onchange=$('#mgrid').onchange=()=>send('snap_set',{mode:$('#msnap').value,grid:+$('#mgrid').value});$('#mparkall').onclick=()=>send('park_all',{on:!S.parkAll});$('#mreset').onclick=()=>send('reset_positions');$('#mundo').onclick=()=>send('undo_positions');
 // Pointer-based drag (HTML5 drag and drop is disabled by the native file-drop handler). A press without movement selects the
 // widget; clicking a monitor then moves it there.
 const mdiag=$('#mdiag');
-mdiag.addEventListener('pointerdown',(e)=>{const c=e.target.closest('.wchip');if(!c)return;drag={w:c.dataset.w,x:e.clientX,y:e.clientY,moved:false,ghost:null};e.preventDefault()});
-document.addEventListener('pointermove',(e)=>{if(!drag)return;if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>5){drag.moved=true;const g=document.createElement('div');g.className='ghost wchip';g.textContent=(S.placements.find(p=>p.widget===drag.w)||{}).name||'';document.body.append(g);drag.ghost=g}
-  if(drag.ghost){drag.ghost.style.left=(e.clientX+8)+'px';drag.ghost.style.top=(e.clientY+8)+'px';const t=document.elementFromPoint(e.clientX,e.clientY);$$('.mon').forEach(m=>m.classList.toggle('over',!!t&&m===t.closest('.mon')))}});
-document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=null;if(d.ghost)d.ghost.remove();$$('.mon').forEach(m=>m.classList.remove('over'));
-  if(d.moved){const t=document.elementFromPoint(e.clientX,e.clientY),m=t&&t.closest('.mon');if(m)sendAssign(d.w,m.dataset.id)}else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
+mdiag.addEventListener('pointerdown',(e)=>{const c=e.target.closest('.wchip');if(!c)return;const r=c.getBoundingClientRect();drag={w:c.dataset.w,el:c,x:e.clientX,y:e.clientY,left:r.left,top:r.top,wd:r.width,ht:r.height,moved:false};e.preventDefault()});
+document.addEventListener('pointermove',(e)=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(!drag.moved&&Math.hypot(dx,dy)>5){const pl=(S.placements||[]).find(p=>p.widget===drag.w);if(pl&&pl.locked){drag=null;toast('This widget cannot be moved now ('+pl.locked+').');return}drag.moved=true;drag.el.classList.add('drag')}
+  if(drag.moved){drag.el.style.transform=`translate(${dx}px,${dy}px)`;const t=document.elementFromPoint(drag.left+dx+drag.wd/2,drag.top+dy+drag.ht/2);$$('.mon').forEach(m=>m.classList.toggle('over',!!t&&m===t.closest('.mon')))}});
+document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=null;$$('.mon').forEach(m=>m.classList.remove('over'));
+  if(d.moved){const dx=e.clientX-d.x,dy=e.clientY-d.y;d.el.style.visibility='hidden';const t=document.elementFromPoint(d.left+dx+d.wd/2,d.top+dy+d.ht/2);d.el.style.visibility='';d.el.style.transform='';d.el.classList.remove('drag');const mel=t&&t.closest('.mon');
+    if(mel){const mm=(S.monitors||[]).find(m=>m.id===mel.dataset.id),br=mel.getBoundingClientRect();if(mm){const k=mm.wd/br.width;send('place',{widget:d.w,monitor:mm.id,x:(d.left+dx-br.left)*k,y:(d.top+dy-br.top)*k});selW=null;return}}R.mon=null;renderMon()}
+  else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
 mdiag.addEventListener('click',(e)=>{if(e.target.closest('.wchip'))return;const m=e.target.closest('.mon');if(m&&selW)sendAssign(selW,m.dataset.id)});
 mdiag.addEventListener('keydown',(e)=>{const c=e.target.closest('.wchip');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selW=selW===c.dataset.w?null:c.dataset.w;R.mon=null;renderMon()}});
 

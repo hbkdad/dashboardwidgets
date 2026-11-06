@@ -1,5 +1,10 @@
 # Progress log (update at the end of every work session)
 
+## Feature work 2026-11-06 (branches feat/drag-placement, then feat/motion-overlays, feat/skins; NOT merged, NOT pushed)
+- FACT (observed 2026-11-06): this PC's second monitor is now a 1920x1080 (22CV1Q, left of the primary at -1920,0), not the 1280x400 case screen of D33. Tests below ran on that layout; the 1280x400 shrink case is covered by unit tests only.
+- Drag-and-drop placement (D35) built: `plinth-core::placement` (18 tests), edit overlay (`edit.html`), hub diagram drag, snapping settings. `scripts/dragtest.ps1` (real mouse) 14/14, three runs in a row; monitors lifecycle 17/17; click test 55/55. NOT TESTED: hub-diagram drag with a real pointer, keyboard nudge, touch, mixed DPI on hardware.
+- Lesson: changing a window's region during a drag cancels the pointer capture (the drop arrived with stale coordinates). The overlay now widens its region while the pointer hovers a widget, never mid-drag.
+
 ## PC test run 2026-11-06 (v0.13.1, this PC: Windows 11 build 26300, two monitors, release build)
 - PASS: `cargo test --workspace` (83 core, 25 host, 8 proxy, 19 app; 3 app tests ignored); app autotest 21/21; fake-monitor lifecycle 15/15; Moods and cards 11/11; real-hub click test 55/55; background 3/3; log 3/3; wallpaper library end to end 10/10 on the real monitors (Windows' wallpaper registry path unchanged afterwards; Plinth's own check says Revert restored every monitor).
 - Lock/unlock: app stayed alive, memory normal, idle CPU 0.008% of the CPU afterwards; log shows widgets paused then resumed. Layer visuals after unlock NOT checked by screenshot (my window enumeration cannot see the layer: it is a child of the desktop window).

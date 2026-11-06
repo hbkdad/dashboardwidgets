@@ -52,6 +52,7 @@ type ThumbJob = (String, wry::RequestAsyncResponder);
 
 const HUB_HTML: &str = include_str!("hub.html");
 const LAYER_HTML: &str = include_str!("layer.html");
+const EDIT_HTML: &str = include_str!("edit.html");
 
 enum Ev {
     Hub(String),
@@ -73,6 +74,7 @@ enum Ev {
     Context(Context),
     DropHover(bool),
     Auto(u8),
+    Edit { monitor: String, msg: String },
 }
 
 struct SceneStyle {
@@ -143,6 +145,8 @@ struct App {
     suggestion: Option<Suggestion>,
     mood_current: String,
     pending_card: Option<SetupCard>,
+    /// The edit-layout overlay is open (drag widgets on the desktop).
+    editing: bool,
 }
 
 impl App {
@@ -207,7 +211,7 @@ impl App {
             .monitors
             .iter()
             .enumerate()
-            .map(|(i, m)| json!({ "id": m.id, "n": i + 1, "name": m.name, "x": m.x, "y": m.y, "w": m.width_px, "h": m.height_px, "dpi": m.dpi, "scale": m.scale_percent(), "primary": m.primary, "hz": m.refresh_hz, "portrait": m.portrait(), "wallpaper": self.wallpaper_for(m), "layer": layer_targets(self).iter().any(|t| t.id == m.id) }))
+            .map(|(i, m)| json!({ "id": m.id, "n": i + 1, "wd": m.size_dip().0, "hd": m.size_dip().1, "name": m.name, "x": m.x, "y": m.y, "w": m.width_px, "h": m.height_px, "dpi": m.dpi, "scale": m.scale_percent(), "primary": m.primary, "hz": m.refresh_hz, "portrait": m.portrait(), "wallpaper": self.wallpaper_for(m), "layer": layer_targets(self).iter().any(|t| t.id == m.id) }))
             .collect();
         let place_json: Vec<Value> = self
             .st
@@ -217,7 +221,7 @@ impl App {
                 let r = self.resolved.iter().find(|r| r.widget == p.widget);
                 let nm = { let b = p.widget.split('#').next().unwrap_or(""); let n = names.get(b).cloned().unwrap_or_default(); match p.widget.split_once('#') { Some((_, c)) => format!("{n} (copy {c})"), None => n } };
                 let home_ok = p.home == mons::ROLE_PRIMARY || self.monitors.iter().any(|m| m.id == p.home || (!p.home_fingerprint.is_empty() && m.fingerprint == p.home_fingerprint));
-                json!({ "widget": p.widget, "base": p.widget.split('#').next().unwrap_or(""), "copy": p.widget.split_once('#').and_then(|(_, n)| n.parse::<u32>().ok()).unwrap_or(1), "name": nm, "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
+                json!({ "widget": p.widget, "base": p.widget.split('#').next().unwrap_or(""), "copy": p.widget.split_once('#').and_then(|(_, n)| n.parse::<u32>().ok()).unwrap_or(1), "name": nm, "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "rect": r.map(|r| json!([r.x, r.y, r.w, r.h])), "locked": self.locked_reason(&p.widget), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
             })
             .collect();
         let (lib_summary, lib_names): (Value, HashMap<String, String>) = {
@@ -248,9 +252,81 @@ impl App {
             }
             json!({ "name": c.name, "author": c.author, "scene": c.scene, "widgets": c.widgets.len(), "monitors": c.widgets.iter().map(|p| p.monitor).max().map_or(1, |m| m as usize + 1), "missing": missing, "permissions": perms, "hosts": hosts, "haveMonitors": self.monitors.len() })
         });
-        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "snap": { "mode": self.st.snap.mode.as_str(), "grid": self.st.snap.grid }, "editing": self.editing, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
+    }
+
+    fn widget_name(&self, widget: &str) -> String {
+        let base = widget.split('#').next().unwrap_or(widget);
+        let n = self.host.lock().unwrap().describe().into_iter().find(|w| w.id == base).map(|w| w.name).unwrap_or_default();
+        match widget.split_once('#') {
+            Some((_, c)) => format!("{n} (copy {c})"),
+            None => n,
+        }
+    }
+
+    /// Why a widget cannot be dragged right now (None = it can). Parked and temporarily moved widgets are never written back (D26).
+    fn locked_reason(&self, widget: &str) -> Option<&'static str> {
+        if self.park_all {
+            return Some("moved temporarily");
+        }
+        match self.resolved.iter().find(|r| r.widget == widget) {
+            None => Some("not shown"),
+            Some(r) if r.parked => Some("its monitor is unplugged"),
+            _ => None,
+        }
+    }
+
+    /// Where a widget would land if dropped with its top-left at (x, y) DIP on monitor `from_id`: the target monitor, the snapped
+    /// rectangle and the scale it is shown at there. Pure reads.
+    fn snap_for(&self, widget: &str, from_id: &str, x: f32, y: f32) -> Option<(MonitorInfo, plinth_core::placement::Snapped, f32)> {
+        use plinth_core::placement::{retarget, scale_on, snap, Rect};
+        let old = self.st.placements.iter().find(|p| p.widget == widget)?;
+        let from = self.monitors.iter().find(|m| m.id == from_id)?;
+        let r = self.resolved.iter().find(|r| r.widget == widget)?;
+        let (t, rt) = retarget(&self.monitors, from, Rect::new(x, y, r.w, r.h))?;
+        let sc = scale_on(old, t);
+        let (wx, wy, ww, wh) = t.work_dip();
+        let others: Vec<Rect> = self.resolved.iter().filter(|o| o.monitor == t.id && o.widget != widget).map(|o| Rect::new(o.x, o.y, o.w, o.h)).collect();
+        let s = snap(Rect::new(rt.x, rt.y, old.w * sc, old.h * sc), Rect::new(wx, wy, ww, wh), &others, self.st.snap);
+        Some((t.clone(), s, sc))
+    }
+
+    /// Save a drop: the only place a dragged position becomes saved state. Returns a message for the hub.
+    fn commit_place(&mut self, widget: &str, from_id: &str, x: f32, y: f32) -> Result<String, String> {
+        if !(x.is_finite() && y.is_finite()) {
+            return Err("That position is not valid.".into());
+        }
+        if let Some(why) = self.locked_reason(widget) {
+            return Err(format!("This widget cannot be moved now ({why}). Your saved layout is untouched."));
+        }
+        let (t, s, sc) = self.snap_for(widget, from_id, x, y).ok_or("That widget or monitor is not available.")?;
+        let old = self.st.placements.iter().find(|p| p.widget == widget).cloned().ok_or("That widget is not available.")?;
+        let np = plinth_core::placement::placed(&old, &t, s.rect, sc);
+        if np == old {
+            return Ok("It was already there.".into());
+        }
+        let moved_monitor = np.home != old.home;
+        if let Some(p) = self.st.placements.iter_mut().find(|p| p.widget == widget) {
+            *p = np;
+        }
+        Ok(if moved_monitor { format!("Moved to {}.", t.name) } else { "Moved.".into() })
+    }
+
+    /// What the edit overlay of one monitor shows.
+    fn edit_data(&self, m: &MonitorInfo, main: bool) -> Value {
+        let (wx, wy, ww, _) = m.work_dip();
+        let widgets: Vec<Value> = self
+            .resolved
+            .iter()
+            .filter(|r| r.monitor == m.id)
+            .map(|r| {
+                let why = self.locked_reason(&r.widget);
+                json!({ "id": r.widget, "name": self.widget_name(&r.widget), "x": r.x, "y": r.y, "w": r.w, "h": r.h, "locked": why.is_some(), "why": why.unwrap_or("") })
+            })
+            .collect();
+        json!({ "main": main, "monitor": m.id, "snap": { "mode": self.st.snap.mode.as_str(), "grid": self.st.snap.grid }, "widgets": widgets, "barLeft": wx + ww / 2.0 - 270.0, "barTop": wy + 12.0 })
     }
 
     fn primary_id(&self) -> Option<String> {
@@ -297,21 +373,31 @@ impl App {
     }
 
     fn layer_html(&self, m: &MonitorInfo) -> String {
+        self.layer_html_inner(m, false)
+    }
+
+    /// The widgets of one layer with their places. Moving a widget changes only this list, so the layer applies it live (`__layout`)
+    /// instead of reloading the page; `zero_pos` gives the page without places, to tell a real change from a move.
+    fn layer_widgets(&self, m: &MonitorInfo, zero_pos: bool) -> Vec<Value> {
+        if self.st.safe {
+            return vec![];
+        }
+        let info = self.host.lock().unwrap().describe();
+        self.resolved
+            .iter()
+            .filter(|r| r.monitor == m.id)
+            .filter_map(|r| {
+                let base = r.widget.split('#').next().unwrap_or(&r.widget);
+                let w = info.iter().find(|w| w.id == base)?;
+                let k = |v: f32| if zero_pos { 0.0 } else { v.round() };
+                Some(json!({ "id": r.widget, "base": base, "slot": w.slot, "trusted": w.trusted, "x": k(r.x), "y": k(r.y), "w": k(r.w), "h": k(r.h) }))
+            })
+            .collect()
+    }
+
+    fn layer_html_inner(&self, m: &MonitorInfo, zero_pos: bool) -> String {
         let s = scene(&self.st.scene);
-        let widgets: Vec<Value> = if self.st.safe {
-            vec![]
-        } else {
-            let info = self.host.lock().unwrap().describe();
-            self.resolved
-                .iter()
-                .filter(|r| r.monitor == m.id)
-                .filter_map(|r| {
-                    let base = r.widget.split('#').next().unwrap_or(&r.widget);
-                    let w = info.iter().find(|w| w.id == base)?;
-                    Some(json!({ "id": r.widget, "base": base, "slot": w.slot, "trusted": w.trusted, "x": r.x.round(), "y": r.y.round(), "w": r.w.round(), "h": r.h.round() }))
-                })
-                .collect()
-        };
+        let widgets = self.layer_widgets(m, zero_pos);
         let banner = if self.st.safe { r#"<div style="position:fixed;left:50%;top:6%;transform:translateX(-50%);padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.55);border:1px solid #ffb454;color:#ffb454;font:600 14px system-ui">Safe mode: widgets are paused</div>"# } else { "" };
         let beacon = if self.beacon && m.primary { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
         let wp_html = self.wallpaper_html(&self.wallpaper_for(m));
@@ -350,7 +436,10 @@ struct Layer {
     _window: Window,
     webview: WebView,
     rect: (i32, i32, u32, u32),
+    /// Hash of the page without widget places; a change reloads the page.
     html_hash: u64,
+    /// Hash of the widget places; a change only moves the widgets.
+    pos_hash: u64,
 }
 
 fn hash_str(s: &str) -> u64 {
@@ -379,13 +468,19 @@ fn sync_layers(target: &EventLoopWindowTarget<Ev>, app: &App, layers: &mut HashM
     layers.retain(|id, _| want.iter().any(|m| &m.id == id));
     for m in want {
         let html = app.layer_html(&m);
-        let hh = hash_str(&html);
+        let hh = hash_str(&app.layer_html_inner(&m, true));
+        let layout = Value::Array(app.layer_widgets(&m, false)).to_string();
+        let ph = hash_str(&layout);
         let rect = (m.x, m.y, m.width_px, m.height_px);
         match layers.get_mut(&m.id) {
             Some(l) if l.rect == rect => {
                 if l.html_hash != hh {
                     let _ = l.webview.load_html(&html);
                     l.html_hash = hh;
+                    l.pos_hash = ph;
+                } else if l.pos_hash != ph {
+                    let _ = l.webview.evaluate_script(&format!("__layout({layout})"));
+                    l.pos_hash = ph;
                 }
                 continue;
             }
@@ -394,8 +489,81 @@ fn sync_layers(target: &EventLoopWindowTarget<Ev>, app: &App, layers: &mut HashM
             }
             None => {}
         }
-        if let Some(l) = create_layer(target, app, &m, &html, ctx, proxy) {
+        if let Some(mut l) = create_layer(target, app, &m, &html, ctx, proxy) {
+            l.html_hash = hh;
+            l.pos_hash = ph;
             layers.insert(m.id.clone(), l);
+        }
+    }
+}
+
+/// One edit-layout overlay: a translucent top-level window shaped to the widgets of one monitor (D35).
+struct Overlay {
+    window: Window,
+    view: WebView,
+    monitor: String,
+}
+
+/// JSON for a script: `<` is written as the escape for U+003C so the text can never close the page's script element.
+fn js_safe(v: &Value) -> String {
+    v.to_string().replace('<', &format!("{}u003c", char::from(92u8)))
+}
+
+/// Window region of an overlay in window pixels: one rectangle per widget, plus the toolbar on the main overlay.
+fn overlay_region(data: &Value, scale: f32) -> Vec<(i32, i32, i32, i32)> {
+    let f = |v: &Value| v.as_f64().unwrap_or(0.0) as f32;
+    let px = |v: f32| (v * scale).round() as i32;
+    let mut r: Vec<(i32, i32, i32, i32)> = data["widgets"]
+        .as_array()
+        .map(|a| a.iter().map(|w| (px(f(&w["x"])), px(f(&w["y"])), px(f(&w["x"]) + f(&w["w"])), px(f(&w["y"]) + f(&w["h"])))).collect())
+        .unwrap_or_default();
+    if data["main"].as_bool().unwrap_or(false) {
+        let (l, t) = (f(&data["barLeft"]), f(&data["barTop"]));
+        r.push((px(l), px(t), px(l + 540.0), px(t + 56.0)));
+    }
+    if r.is_empty() {
+        r.push((0, 0, 1, 1)); // nothing to show: a one-pixel window part, never the whole screen
+    }
+    r
+}
+
+fn open_overlay(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, main: bool, proxy: &EventLoopProxy<Ev>) -> Option<Overlay> {
+    use tao::platform::windows::WindowBuilderExtWindows as _;
+    let window = WindowBuilder::new()
+        .with_title("Plinth edit layout")
+        .with_decorations(false)
+        .with_undecorated_shadow(false)
+        .with_always_on_top(true)
+        .with_resizable(false)
+        .with_skip_taskbar(true)
+        .with_inner_size(tao::dpi::PhysicalSize::new(m.width_px, m.height_px))
+        .with_position(tao::dpi::PhysicalPosition::new(m.x, m.y))
+        .build(target)
+        .ok()?;
+    let data = app.edit_data(m, main);
+    let html = EDIT_HTML.replace("__DATA__", &js_safe(&data)).replace("__BARTOP__", &format!("{}", data["barTop"].as_f64().unwrap_or(12.0)));
+    let (p, mid) = (proxy.clone(), m.id.clone());
+    let view = WebViewBuilder::new()
+        .with_html(html)
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            let _ = p.send_event(Ev::Edit { monitor: mid.clone(), msg: req.body().clone() });
+        })
+        .build(&window)
+        .ok()?;
+    win::make_translucent(window.hwnd() as isize, 120);
+    win::set_region(window.hwnd() as isize, &overlay_region(&data, m.scale()));
+    window.set_focus();
+    Some(Overlay { window, view, monitor: m.id.clone() })
+}
+
+/// Send the current layout to every overlay and reshape its window to the widgets.
+fn refresh_overlays(app: &App, overlays: &[Overlay]) {
+    for o in overlays {
+        if let Some(m) = app.monitors.iter().find(|m| m.id == o.monitor) {
+            let main = app.monitors.iter().position(|x| x.id == m.id) == Some(0) || m.primary;
+            let data = app.edit_data(m, main);
+            let _ = o.view.evaluate_script(&format!("__layout({})", js_safe(&data)));
+            win::set_region(o.window.hwnd() as isize, &overlay_region(&data, m.scale()));
         }
     }
 }
@@ -506,7 +674,7 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, 
     use wry::WebViewBuilderExtWindows;
     b = b.with_additional_browser_args(format!("--proxy-server=http://127.0.0.1:{} --proxy-bypass-list=<-loopback>", app.proxy_port));
     let webview = b.build(&window).ok()?;
-    Some(Layer { _window: window, webview, rect: (m.x, m.y, m.width_px, m.height_px), html_hash: hash_str(html) })
+    Some(Layer { _window: window, webview, rect: (m.x, m.y, m.width_px, m.height_px), html_hash: 0, pos_hash: 0 })
 }
 
 fn wallpaper_images_dir() -> PathBuf {
@@ -786,7 +954,7 @@ fn main() {
     st.first_run = st.first_run && autotest.is_none();
     let walls = Arc::new(Mutex::new(WallpaperStore::new(wallpapers_dir(), user_wallpapers_dir())));
     println!("wallpapers: {} found", walls.lock().unwrap().list().len());
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new(), engine: Engine::new(Vec::new(), 120), learner: Learner::new(3), last_ctx: Context::default(), suggestion: None, mood_current: String::new(), pending_card: None };
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new(), engine: Engine::new(Vec::new(), 120), learner: Learner::new(3), last_ctx: Context::default(), suggestion: None, mood_current: String::new(), pending_card: None, editing: false };
     app.monitors = current_monitors(&app.fake);
     println!("monitors: {}", app.monitors.iter().map(|m| format!("{} {}x{} at {},{} {}%{}", m.name, m.width_px, m.height_px, m.x, m.y, m.scale_percent(), if m.primary { " primary" } else { "" })).collect::<Vec<_>>().join(" | "));
     app.recompute();
@@ -848,6 +1016,7 @@ fn main() {
     let mut layer_ctx = WebContext::new(Some(state::webview_dir().join("wv-layer")));
     let mut layers: HashMap<String, Layer> = HashMap::new();
     let mut identify: Vec<(Window, WebView)> = Vec::new();
+    let mut overlays: Vec<Overlay> = Vec::new();
 
     {
         // Hub revival: if the hub was hidden (its web view released) and something makes the window visible again, such as a
@@ -1106,6 +1275,15 @@ fn main() {
                 hub(&p, r#"{"cmd":"widget_add","widget":"com.plinth.clock","monitor":"FAKE#C"}"#);
                 nap(3);
                 let _ = p.send_event(Ev::Auto(29)); // H: a second clock on monitor C, the first still on B
+                // I: drop placement from the hub diagram: exact place on monitor B, and a refused drop while widgets are parked temporarily
+                hub(&p, r#"{"cmd":"place","widget":"com.plinth.clock","monitor":"FAKE#B","x":300,"y":200}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"park_all","on":true}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"place","widget":"com.plinth.clock","monitor":"FAKE#B","x":800,"y":600}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"park_all","on":false}"#);
+                nap(2);
                 let _ = p.send_event(Ev::Auto(26));
                 return;
             }
@@ -1155,6 +1333,9 @@ fn main() {
     let mut mood_snaps: Vec<(String, String, bool, usize, bool, bool)> = Vec::new();
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
+    if std::env::var_os("PLINTH_AUTOEDIT").is_some() {
+        app.st.applied = true;
+    }
     let mut applied_before_start = app.st.applied;
 
     event_loop.run(move |event, target, control_flow| {
@@ -1163,6 +1344,30 @@ fn main() {
             applied_before_start = false;
             sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
             println!("restored applied scene {} (layers created: {})", app.st.scene, layers.len());
+            if std::env::var_os("PLINTH_AUTOEDIT").is_some() {
+                // Drag test (scripts/dragtest.ps1): open the edit overlays and print where every widget is on the real screen.
+                for (i, m) in layer_targets(&app).iter().enumerate() {
+                    if let Some(o) = open_overlay(target, &app, m, i == 0, &proxy) {
+                        overlays.push(o);
+                    }
+                }
+                app.editing = !overlays.is_empty();
+                for r in &app.resolved {
+                    if let Some(m) = app.monitors.iter().find(|m| m.id == r.monitor) {
+                        let s = m.scale();
+                        println!("autoedit: widget {} monitor {} screen {} {} {} {}", r.widget, m.name, m.x + (r.x * s) as i32, m.y + (r.y * s) as i32, (r.w * s) as i32, (r.h * s) as i32);
+                    }
+                }
+                for m in &app.monitors {
+                    println!("autoedit: monitor {} id {} screen {} {} {} {} primary {}", m.name, m.id, m.x, m.y, m.width_px, m.height_px, m.primary);
+                }
+                if let Some(m) = layer_targets(&app).first() {
+                    let (wx, wy, ww, _) = m.work_dip();
+                    let s = m.scale();
+                    println!("autoedit: done button screen {} {}", m.x + ((wx + ww / 2.0 + 270.0 - 50.0) * s) as i32, m.y + ((wy + 12.0 + 28.0) * s) as i32);
+                }
+                println!("autoedit: overlays {}", overlays.len());
+            }
         }
         // The hub's browser process is released while the hub is hidden (about 200 MB) and rebuilt when it is shown again,
         // whether from the tray, a second launch, or any other way the window becomes visible.
@@ -1571,6 +1776,47 @@ fn main() {
                             _ => msg = Some("That widget or monitor is not available.".into()),
                         }
                     }
+                    "edit_layout" => {
+                        let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+                        overlays.clear();
+                        app.editing = false;
+                        if on {
+                            let fake = app.fake.lock().unwrap().is_some();
+                            if !app.st.applied {
+                                msg = Some("Press Apply first: the layout is edited on your desktop.".into());
+                            } else if app.st.safe {
+                                msg = Some("Safe mode is on, so no widgets are shown. Turn it off to edit the layout.".into());
+                            } else if fake {
+                                msg = Some("Editing on the desktop needs your real monitors (test monitors are on).".into());
+                            } else {
+                                let targets = layer_targets(&app);
+                                for (i, m) in targets.iter().enumerate() {
+                                    if let Some(o) = open_overlay(target, &app, m, i == 0, &proxy) {
+                                        overlays.push(o);
+                                    }
+                                }
+                                app.editing = !overlays.is_empty();
+                                msg = Some(if app.editing { "Edit layout is on: drag widgets on your desktop. Esc or Done finishes.".into() } else { "Plinth could not open the edit overlay.".into() });
+                            }
+                        }
+                    }
+                    "snap_set" => {
+                        app.st.snap = plinth_core::placement::SnapConfig::sanitized(v.get("mode").and_then(Value::as_str).unwrap_or("both"), v.get("grid").and_then(Value::as_f64).unwrap_or(24.0) as f32);
+                        refresh_overlays(&app, &overlays);
+                        msg = Some("Snapping updated.".into());
+                    }
+                    "place" => {
+                        // Drop from the hub's layout diagram: (x, y) are DIP from the top-left of the monitor `monitor`.
+                        let (wid, mid) = (v.get("widget").and_then(Value::as_str).unwrap_or(""), v.get("monitor").and_then(Value::as_str).unwrap_or(""));
+                        let (x, y) = (v.get("x").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32, v.get("y").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32);
+                        match app.commit_place(wid, mid, x, y) {
+                            Ok(m) => {
+                                relayout = true;
+                                msg = Some(m);
+                            }
+                            Err(m) => msg = Some(m),
+                        }
+                    }
                     "fallback" => {
                         let mid = v.get("monitor").and_then(Value::as_str).unwrap_or("");
                         if mid.is_empty() || app.monitors.iter().any(|m| m.id == mid) {
@@ -1725,6 +1971,14 @@ fn main() {
                     }
                     sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
                 }
+                if app.editing && (reload || relayout) {
+                    if app.st.safe || !app.st.applied {
+                        overlays.clear();
+                        app.editing = false;
+                    } else {
+                        refresh_overlays(&app, &overlays);
+                    }
+                }
                 sampler.set_active(!layers.is_empty() && !app.st.safe && !app.paused);
                 if cmd != "state" {
                     println!("hub: {cmd} handled");
@@ -1825,6 +2079,8 @@ fn main() {
             Event::UserEvent(Ev::Monitors(list)) => {
                 let (gone, came) = mons::diff_monitors(&app.monitors, &list);
                 println!("monitors changed: gone [{}], new [{}]", gone.join(", "), came.join(", "));
+                overlays.clear(); // the shapes would be wrong; the user opens edit layout again
+                app.editing = false;
                 app.monitors = list;
                 app.park_all = false; // a real display change returns to the saved layout
                 app.recompute();
@@ -1836,6 +2092,62 @@ fn main() {
                 request_statics(&app, &proxy, None);
                 let note = if !gone.is_empty() && parked > 0 { Some(format!("{} disconnected: {parked} widget(s) moved to a visible monitor and will return when it reconnects.", gone.join(", "))) } else if !came.is_empty() { Some(format!("{} connected.", came.join(", "))) } else { None };
                 reply(&app, &hub_view, note.as_deref());
+            }
+            Event::UserEvent(Ev::Edit { monitor, msg }) => {
+                let Ok(v) = serde_json::from_str::<Value>(&msg) else { return };
+                let t = v.get("t").and_then(Value::as_str).unwrap_or("");
+                let id = v.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let (x, y) = (v.get("x").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32, v.get("y").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32);
+                if t != "preview" || std::env::var_os("PLINTH_EDIT_TRACE").is_some() {
+                    println!("edit: message {t} {id} at {x},{y} on {monitor}");
+                }
+                match t {
+                    "hover" => {
+                        // While the pointer is over a widget the window covers the whole monitor, so a drag can go anywhere (and the
+                        // pointer capture is never disturbed by a window change in the middle of a drag); when the pointer leaves it is
+                        // shaped back to the widgets and the desktop icons are clickable again.
+                        if let Some(o) = overlays.iter().find(|o| o.monitor == monitor) {
+                            if v.get("on").and_then(Value::as_bool).unwrap_or(false) {
+                                win::set_region(o.window.hwnd() as isize, &[]);
+                            } else if let Some(m) = app.monitors.iter().find(|m| m.id == monitor) {
+                                win::set_region(o.window.hwnd() as isize, &overlay_region(&app.edit_data(m, app.monitors.iter().position(|x| x.id == m.id) == Some(0) || m.primary), m.scale()));
+                            }
+                        }
+                    }
+                    "preview" => {
+                        if let (Some((t, s, _)), Some(o)) = (app.snap_for(&id, &monitor, x, y), overlays.iter().find(|o| o.monitor == monitor)) {
+                            let g = json!({ "here": t.id == monitor, "x": s.rect.x, "y": s.rect.y, "w": s.rect.w, "h": s.rect.h, "gx": s.guide_x, "gy": s.guide_y });
+                            let _ = o.view.evaluate_script(&format!("__ghost({g})"));
+                        }
+                    }
+                    "drop" | "nudge" => {
+                        let m = match app.commit_place(&id, &monitor, x, y) {
+                            Ok(m) => {
+                                app.recompute();
+                                sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                                app.persist();
+                                println!("edit: {t} {id} on {monitor} handled");
+                                if let Some((r, m)) = app.resolved.iter().find(|r| r.widget == id).and_then(|r| app.monitors.iter().find(|m| m.id == r.monitor).map(|m| (r, m))) {
+                                    println!("edit: placed {id} at screen {} {} on {}", m.x + (r.x * m.scale()) as i32, m.y + (r.y * m.scale()) as i32, m.name);
+                                }
+                                m
+                            }
+                            Err(m) => {
+                                println!("edit: refused: {m}");
+                                m
+                            }
+                        };
+                        refresh_overlays(&app, &overlays);
+                        reply(&app, &hub_view, Some(&m));
+                    }
+                    "done" => {
+                        overlays.clear();
+                        app.editing = false;
+                        println!("edit: layout editing finished");
+                        reply(&app, &hub_view, Some("Layout saved."));
+                    }
+                    _ => {}
+                }
             }
             Event::UserEvent(Ev::IdentifyEnd) => identify.clear(),
             Event::UserEvent(Ev::LibraryChanged) => {
@@ -2198,6 +2510,8 @@ fn monitor_report(app: &App, snaps: &[MonSnap]) -> i32 {
         ("G: Undo brings the previous assignments back", g(6).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved) && Some(&s.homes) == g(0).map(|a| &a.homes))),
         ("H: a second copy of the clock runs on monitor C while the first stays on monitor B", g(7).map_or(false, |s| s.on(clock) == Some(("FAKE#B", false)) && s.on("com.plinth.clock#2") == Some(("FAKE#C", false)))),
         ("H: monitor C now has a layer for both the vitals and the clock copy", g(7).map_or(false, |s| s.layers.contains(&"FAKE#C".to_string()))),
+        ("I: a drop from the hub diagram saved a corner anchor and offsets near the dropped place (snapped by at most one grid step), on monitor B, with the real size", app.st.placements.iter().any(|p| p.widget == clock && p.home == "FAKE#B" && p.anchor == mons::Anchor::TopLeft && (p.dx - 300.0).abs() <= 30.0 && (p.dy - 200.0).abs() <= 30.0 && p.w == 360.0 && p.h == 118.0)),
+        ("I: a drop while widgets are only temporarily on the primary was refused and saved nothing", app.st.placements.iter().any(|p| p.widget == clock && (p.dx - 300.0).abs() <= 30.0) && !app.st.placements.iter().any(|p| p.widget == clock && p.dx > 700.0)),
         ("the saved home of the clock stayed monitor B in the file the app writes", app.st.placements.iter().any(|p| p.widget == clock && p.home == "FAKE#B")),
     ];
     let mut failed = 0;
