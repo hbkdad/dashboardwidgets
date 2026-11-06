@@ -1,6 +1,6 @@
 {
   "note": "Status is only 'done' with evidence. 'partial' states what is missing. Update in the same commit as the work.",
-  "version": "0.7.0",
+  "version": "0.14.0",
   "features": [
     {
       "id": "F01",
@@ -158,7 +158,7 @@
       "id": "F24",
       "name": "Custom skins (data-only look tokens: global and per widget, in setup cards, hub editor)",
       "status": "partial",
-      "evidence": "2026-11-06: skins autotest 11/11 on this PC (live layer computed styles match the skin: 30 px corners, rgba(16,32,48,0.7), blur 32 px; per-widget override; bad skins and hostile cards refused; export card parses strictly and holds no CSS characters; import under a new id without overwriting; Undo; delete falls back to default); 17 skin and card tests in plinth-core; one screenshot showed Terminal (monospace), Paper card (serif, Notes) and Soft pill (clock) on the real desktop",
+      "evidence": "2026-11-06: skins autotest 11/11 and click test 59/59 (Skins view opens, Make a copy saves a custom skin) on this PC (live layer computed styles match the skin: 30 px corners, rgba(16,32,48,0.7), blur 32 px; per-widget override; bad skins and hostile cards refused; export card parses strictly and holds no CSS characters; import under a new id without overwriting; Undo; delete falls back to default); 17 skin and card tests in plinth-core; one screenshot showed Terminal (monospace), Paper card (serif, Notes) and Soft pill (clock) on the real desktop",
       "missing": "font, ink and accent delivery to widgets is OBSERVED once by screenshot, not asserted by a test; the hub editor was not click-tested (its commands are tested); hard-to-read warning is a WCAG ratio, not tested on people; widgets without Plinth's SDK keep their own font and accent; no per-monitor skins; skins are not in the hub's live preview of scenes"
     }
   ]

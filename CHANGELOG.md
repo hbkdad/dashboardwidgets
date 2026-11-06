@@ -3,6 +3,9 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+
+## [0.14.0] - 2026-11-06
+Drag-and-drop placement, motion overlays and custom skins. Three feature branches chained (`feat/drag-placement`, `feat/motion-overlays`, `feat/skins`); not yet merged to main or tagged.
 ### Added
 - **Drag-and-drop widget placement (D35).** Monitors view: "Edit layout on my desktop" opens a translucent overlay on each monitor that has widgets; drag a widget with the mouse (arrow keys nudge a focused one, Shift for 1 DIP) and let go. It snaps to the work area's edges and center, to other widgets' edges and to a grid (settings: edges and grid / edges / grid / off, grid size), shows a dashed ghost and guide line while dragging, and can be dropped on another monitor (mixed DPI is converted through pixels). The overlay window is shaped to the widgets, so desktop icons outside them stay clickable. Done or Esc finishes. The hub's layout diagram now draws each widget at its real place and size and can be dragged the same way (snapped by the same code).
 - `plinth-core::placement` (18 tests): `snap`, `retarget`, `placed`, `scale_on`, `SnapConfig` (sanitized from saved state). Saved state gains `snap_mode` and `snap_grid`.
@@ -16,7 +19,8 @@ All notable changes to this project are recorded here. Format: [Keep a Changelog
 ### Changed
 - Moving a widget no longer reloads the layer page: the layer applies new places live (`__layout`), so widgets keep their state while you arrange them.
 ### Verified
-- Full local run on this PC (2026-11-06): all unit tests, autotest 21/21, monitors 15/15, Moods 11/11, click test 55/55, library 10/10, lock/unlock and short sleep/resume survived. Details in `claude-progress.md`.
+- Full local run on this PC with all three features (2026-11-06): unit tests (128 core, 27 host, 8 proxy, 19 app), autotest 21/21, monitors 17/17, Moods 11/11, overlays 14/14, skins 11/11, real-mouse drag test 14/14, click test 59/59 (after adding 4 checks; 55/55 in the full chain before that), background 3/3, log 3/3. NOT re-run for this release: the library end-to-end test (it changes the real wallpaper) and lock/sleep. One drag test run in the full chain failed once (first drag not registered, 8 of 14); it passed in 15 other runs including the full chain right after; cause NOT found.
+- Earlier local run on this PC (2026-11-06, v0.13.1): all unit tests, autotest 21/21, monitors 15/15, Moods 11/11, click test 55/55, library 10/10, lock/unlock and short sleep/resume survived. Details in `claude-progress.md`.
 ### Changed
 - Docs: progress log brought to v0.13.1; PRD and roadmap now cite the Seelen UI hands-on test (`research/seelen-ui-handson-test.md`). CI runs the host and proxy tests as well as core.
 
