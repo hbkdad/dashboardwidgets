@@ -130,6 +130,9 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <h2 class="mt" style="margin-top:34px">Live wallpapers</h2>
 <div class="drop"><div><b>Add your own video</b><div style="color:var(--mut);font-size:.8125rem">Drag an .mp4, .webm or .m4v file onto this window. Plinth keeps its own copy; your original is never changed. Dropping a folder adds it to your library instead.</div></div><div class="row"><button class="btn g" id="wfolder">Open folder</button><button class="btn g" id="wscan">Rescan</button></div></div>
 <div class="wgrid" id="wgrid" role="radiogroup" aria-label="Choose a live wallpaper"></div>
+<div class="card" style="padding:20px;margin-top:18px" id="fxcard"><div class="row between"><h2>Motion overlay</h2><span class="chip" id="fxcost">no extra cost</span></div><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A gentle animation (particles, soft light, rain, gradient drift) drawn above a still picture or the Scene background. It runs in the same locked box as live wallpapers: it cannot reach the internet, your files or your widgets. Off by default; one motion item at a time.</p>
+<div class="row mt" style="flex-wrap:wrap"><label style="font-size:.8125rem;color:var(--mut)">Overlay <select id="fxid" aria-label="Motion overlay"></select></label><label style="font-size:.8125rem;color:var(--mut)">Amount <select id="fxint" aria-label="Overlay amount"><option value="1">Subtle</option><option value="2">Medium</option><option value="3">Busy</option></select></label><label style="font-size:.8125rem;color:var(--mut)">Speed <select id="fxspd" aria-label="Overlay speed"><option value="50">Slow</option><option value="100">Normal</option><option value="150">Fast</option></select></label></div>
+<div class="note" id="fxwhy" hidden style="margin-top:12px"></div></div>
 <div class="grid"><div class="card" style="padding:20px"><h2>Behind widgets</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A busy picture can make widget text hard to read. Shade it behind the widgets.</p><div class="fld"><label for="lscrim">Shading</label><select id="lscrim" aria-label="Shading behind widgets"><option value="none">None</option><option value="dim">Dim</option><option value="blur">Soften and dim</option></select></div></div>
 <div class="card" style="padding:20px"><h2>Profiles</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">Save wallpapers, widgets and monitor assignments together, and restore them in one click.</p><div class="fld"><input type="text" id="pname" maxlength="40" placeholder="Name, for example Work" aria-label="Profile name"><button class="btn" id="psave">Save profile</button></div><div id="plist" class="mt" style="display:grid;gap:8px"></div></div></div>
 <div class="bar"><div><b id="wn">None</b> <span class="chip" id="wcost">…</span> <span class="chip ok" id="wap" hidden>Applied</span> <span class="chip warn" id="wpz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="btn g" id="rev2" disabled>Revert</button><button class="btn p" id="apply2">Apply to my desktop</button></div></div></section>
@@ -218,6 +221,7 @@ function render(){
     S.wallpapers.forEach(w=>add(w.id,w.name,(w.kind==='video'?'Video':'Animated page')+(w.bundled?' · Plinth':' · Yours'),w.kind==='video'?'v':'',icon[w.kind]||'',!w.bundled))}
   const cw=S.wallpapers.find(w=>w.id===S.wallpaper);
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
+  renderFx();
   renderMon();
   renderLibState();
   renderMoods();renderSettings();
@@ -363,6 +367,12 @@ function renderLibState(){if(!S.lib)return;renderFolders();if(L.rev!==S.lib.revi
   const ps=S.profiles||[],key=JSON.stringify(ps);if(L.pk!==key){L.pk=key;$('#plist').innerHTML=ps.map(n=>`<div class="row between"><b>${esc(n)}</b><span class="row"><button class="btn g" data-pa="${esc(n)}" aria-label="Apply profile ${esc(n)}">Apply</button><button class="btn g" data-pd="${esc(n)}" aria-label="Delete profile ${esc(n)}">Delete</button></span></div>`).join('')||'<span style="color:var(--mut);font-size:.8125rem">No profiles yet.</span>';
     $$('#plist [data-pa]').forEach(b=>b.onclick=()=>send('profile_apply',{name:b.dataset.pa}));$$('#plist [data-pd]').forEach(b=>b.onclick=()=>{if(confirm('Delete profile '+b.dataset.pd+'?'))send('profile_delete',{name:b.dataset.pd})})}
   if(L.sel&&(S.libSel||[]).length!==L.nsel){L.nsel=(S.libSel||[]).length;renderDetail()}}
+function renderFx(){const f=S.fx;if(!f)return;const key=JSON.stringify([f,S.overlays]);if(R.fx===key)return;R.fx=key;
+  $('#fxid').innerHTML='<option value="">None</option>'+(S.overlays||[]).map(o=>`<option value="${esc(o.id)}" ${o.id===f.id?'selected':''}>${esc(o.name)}</option>`).join('');
+  $('#fxint').value=String(f.intensity);$('#fxspd').value=String(f.speed);if($('#fxspd').value!==String(f.speed)){const o=document.createElement('option');o.value=o.textContent=f.speed+'%';$('#fxspd').appendChild(o);$('#fxspd').value=String(f.speed)}
+  $('#fxcost').textContent=f.cost;$('#fxwhy').hidden=!f.id||!f.why;$('#fxwhy').textContent=f.why||''}
+const sendFx=()=>send('overlay_set',{id:$('#fxid').value,intensity:+$('#fxint').value,speed:+$('#fxspd').value});
+$('#fxid').onchange=$('#fxint').onchange=$('#fxspd').onchange=sendFx;
 $('#lscrim').onchange=(e)=>send('scrim',{mode:e.target.value});$('#psave').onclick=()=>{send('profile_save',{name:$('#pname').value});$('#pname').value=''};
 
 window.__drop=(on)=>document.body.classList.toggle('dropping',!!on);

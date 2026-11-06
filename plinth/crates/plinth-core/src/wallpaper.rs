@@ -15,6 +15,8 @@ pub const MAX_IMPORT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub enum WallpaperKind {
     Video,
     Web,
+    /// A transparent web page drawn above a still picture or the Scene (rain, particles...). Same sandbox as `Web` (D23, D36).
+    Overlay,
 }
 
 impl WallpaperKind {
@@ -22,6 +24,7 @@ impl WallpaperKind {
         match self {
             WallpaperKind::Video => "video",
             WallpaperKind::Web => "web",
+            WallpaperKind::Overlay => "overlay",
         }
     }
 }
@@ -118,6 +121,7 @@ pub fn parse(json: &str) -> Result<Wallpaper, WallpaperError> {
     let kind = match s("kind") {
         Some("video") => WallpaperKind::Video,
         Some("web") => WallpaperKind::Web,
+        Some("overlay") => WallpaperKind::Overlay,
         _ => return Err(WallpaperError::Field("kind")),
     };
     let entry = s("entry").ok_or(WallpaperError::Field("entry"))?;
@@ -125,7 +129,7 @@ pub fn parse(json: &str) -> Result<Wallpaper, WallpaperError> {
         && entry.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
         && match kind {
             WallpaperKind::Video => is_video_file(entry),
-            WallpaperKind::Web => extension(entry).as_deref() == Some("html"),
+            WallpaperKind::Web | WallpaperKind::Overlay => extension(entry).as_deref() == Some("html"),
         };
     if !entry_ok {
         return Err(WallpaperError::BadEntry);
@@ -207,6 +211,15 @@ mod tests {
         assert_eq!(w.kind, WallpaperKind::Web);
         assert_eq!(w.fit, Fit::Cover);
         assert_eq!(w.entry, "index.html");
+    }
+
+    #[test]
+    fn parses_an_overlay_package_and_requires_an_html_entry() {
+        let o = parse(r#"{"id":"com.plinth.fx-rain","name":"Rain","kind":"overlay","entry":"index.html"}"#).unwrap();
+        assert_eq!(o.kind, WallpaperKind::Overlay);
+        assert_eq!(o.kind.as_str(), "overlay");
+        assert_eq!(parse(r#"{"id":"com.plinth.fx-rain","name":"Rain","kind":"overlay","entry":"rain.mp4"}"#), Err(WallpaperError::BadEntry));
+        assert_eq!(parse(r#"{"id":"com.plinth.fx-rain","name":"Rain","kind":"overlay","entry":"../x.html"}"#), Err(WallpaperError::BadEntry));
     }
 
     #[test]

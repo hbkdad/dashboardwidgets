@@ -146,6 +146,13 @@
       "status": "partial",
       "evidence": "2026-11-06 on this PC (two real 1920x1080 monitors): scripts/dragtest.ps1 14/14 in 3 runs in a row with the real mouse (pointer over a widget reaches the overlay; outside widgets it reaches the desktop; drop saved; drag onto the other monitor saved its stable id; Done removes the overlay); fake-monitor lifecycle test 17/17 incl. hub place and a refused drop while parked; 18 core tests for snap/retarget/placed incl. mixed DPI and reconcile round trip; click test 55/55 with the new hub",
       "missing": "dragging in the hub diagram with a real pointer NOT TESTED (its place command is tested); keyboard nudge NOT TESTED; touch/pen NOT TESTED; mixed DPI and the 1280x400 case screen only covered by unit tests (the second monitor on this PC is now 1920x1080); overlay is uniformly translucent, not per-pixel; right-click Move to monitor still not built"
+    },
+    {
+      "id": "F23",
+      "name": "Motion overlays for still wallpapers (particles, soft light, rain, gradient drift)",
+      "status": "partial",
+      "evidence": "2026-11-06: overlay autotest 14/14 (sandboxed iframe with only two numbers in its query, served 200, loaded in the live layer, yields to a live wallpaper with the reason shown, governor unloads and reloads it, amount and speed change the query and the cost, refused as a wallpaper, none in Safe mode); core tests (9 motion, 1 wallpaper kind) and a host CSP test; cost measured once per overlay on this PC (RESULTS.md)",
+      "missing": "CPU figures are noisy single runs and the covered case did not drop to about 0 (NOT explained); GPU load NOT measured; overlay is drawn on the primary monitor only; the look of the four overlays was not reviewed by screenshot; no import of user overlays (bundled only); not tested on battery, in a real game or in a remote session"
     }
   ]
 }

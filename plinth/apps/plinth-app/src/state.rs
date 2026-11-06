@@ -36,6 +36,8 @@ pub struct State {
     pub fallback: String,
     /// Snapping used by drag-and-drop placement (D35).
     pub snap: plinth_core::placement::SnapConfig,
+    /// Motion overlay above still wallpapers (D36): which one and how it looks. Off by default.
+    pub fx: plinth_core::motion::MotionConfig,
     /// Moods: automatic profile switching rules (off until the user turns it on).
     pub moods_on: bool,
     pub mood_rules: Vec<plinth_core::context::Rule>,
@@ -78,7 +80,7 @@ fn path() -> PathBuf {
 
 impl State {
     pub fn load() -> State {
-        let default = State { scene: "graphite".into(), applied: false, safe: false, motion: false, wallpaper: String::new(), monitor_walls: HashMap::new(), placements: Vec::new(), fallback: String::new(), snap: Default::default(), moods_on: false, mood_rules: Vec::new(), lib_sel: HashMap::new(), slides: HashMap::new(), scrim: "none".into(), profiles: Default::default(), os_snapshot: None, grants: HashMap::new(), storage: HashMap::new(), first_run: true };
+        let default = State { scene: "graphite".into(), applied: false, safe: false, motion: false, wallpaper: String::new(), monitor_walls: HashMap::new(), placements: Vec::new(), fallback: String::new(), snap: Default::default(), fx: Default::default(), moods_on: false, mood_rules: Vec::new(), lib_sel: HashMap::new(), slides: HashMap::new(), scrim: "none".into(), profiles: Default::default(), os_snapshot: None, grants: HashMap::new(), storage: HashMap::new(), first_run: true };
         let Ok(text) = std::fs::read_to_string(path()) else { return default };
         let Ok(v) = serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')) else { return default }; // tolerate a UTF-8 BOM added by other tools
         let scene = v.get("scene").and_then(Value::as_str).filter(|s| ["dusk", "graphite", "paper"].contains(s)).unwrap_or("graphite").to_string();
@@ -103,6 +105,7 @@ impl State {
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(|p| serde_json::from_value::<plinth_core::monitors::Placement>(p.clone()).ok()).filter(|p| p.w > 0.0 && p.h > 0.0 && p.w < 8000.0 && p.h < 8000.0 && p.dx.is_finite() && p.dy.is_finite()).collect())
             .unwrap_or_default();
+        let fx = plinth_core::motion::MotionConfig::sanitized(v.get("overlay").and_then(Value::as_str).unwrap_or(""), v.get("overlay_intensity").and_then(Value::as_i64).unwrap_or(2), v.get("overlay_speed").and_then(Value::as_i64).unwrap_or(100));
         let fallback = v.get("fallback").and_then(Value::as_str).unwrap_or("").to_string();
         let snap = plinth_core::placement::SnapConfig::sanitized(v.get("snap_mode").and_then(Value::as_str).unwrap_or("both"), v.get("snap_grid").and_then(Value::as_f64).unwrap_or(24.0) as f32);
         let lib_sel = v
@@ -138,7 +141,7 @@ impl State {
         });
         let moods_on = v.get("moods_on").and_then(Value::as_bool).unwrap_or(false);
         let mood_rules = v.get("mood_rules").and_then(Value::as_array).map(|a| a.iter().filter_map(|r| plinth_core::context::rule_from_json(r).ok()).take(32).collect()).unwrap_or_default();
-        State { scene, wallpaper, monitor_walls, placements, fallback, snap, moods_on, mood_rules, lib_sel, slides, scrim, profiles, os_snapshot, applied: v.get("applied").and_then(Value::as_bool).unwrap_or(false), safe: v.get("safe").and_then(Value::as_bool).unwrap_or(false), motion: v.get("motion").and_then(Value::as_bool).unwrap_or(false), grants, storage, first_run: false }
+        State { scene, wallpaper, monitor_walls, placements, fallback, snap, fx, moods_on, mood_rules, lib_sel, slides, scrim, profiles, os_snapshot, applied: v.get("applied").and_then(Value::as_bool).unwrap_or(false), safe: v.get("safe").and_then(Value::as_bool).unwrap_or(false), motion: v.get("motion").and_then(Value::as_bool).unwrap_or(false), grants, storage, first_run: false }
     }
 
     pub fn save(&self) {
@@ -146,7 +149,7 @@ impl State {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let v = json!({ "version": 1, "scene": self.scene, "applied": self.applied, "safe": self.safe, "motion": self.motion, "wallpaper": self.wallpaper, "monitor_walls": self.monitor_walls, "placements": self.placements, "fallback": self.fallback, "snap_mode": self.snap.mode.as_str(), "snap_grid": self.snap.grid, "moods_on": self.moods_on, "mood_rules": self.mood_rules.iter().map(plinth_core::context::rule_to_json).collect::<Vec<_>>(), "lib_sel": self.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(), "slides": self.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>(), "scrim": self.scrim, "profiles": self.profiles, "os_snapshot": self.os_snapshot.as_ref().map(|o| json!({ "wallpapers": o.wallpapers.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(), "position": o.position, "color": o.color })), "grants": self.grants, "storage": self.storage });
+        let v = json!({ "version": 1, "scene": self.scene, "applied": self.applied, "safe": self.safe, "motion": self.motion, "wallpaper": self.wallpaper, "monitor_walls": self.monitor_walls, "placements": self.placements, "fallback": self.fallback, "overlay": self.fx.id, "overlay_intensity": self.fx.intensity, "overlay_speed": self.fx.speed, "snap_mode": self.snap.mode.as_str(), "snap_grid": self.snap.grid, "moods_on": self.moods_on, "mood_rules": self.mood_rules.iter().map(plinth_core::context::rule_to_json).collect::<Vec<_>>(), "lib_sel": self.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(), "slides": self.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>(), "scrim": self.scrim, "profiles": self.profiles, "os_snapshot": self.os_snapshot.as_ref().map(|o| json!({ "wallpapers": o.wallpapers.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(), "position": o.position, "color": o.color })), "grants": self.grants, "storage": self.storage });
         write_atomic(&p, &serde_json::to_vec_pretty(&v).unwrap_or_default());
     }
 }

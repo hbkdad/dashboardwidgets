@@ -202,11 +202,18 @@ impl App {
         let extra_layers = layer_targets(self).len().saturating_sub(1) as f32;
         cost.ram_mb += impact::EXTRA_LAYER.ram_mb * extra_layers;
         cost.cpu_pct += impact::EXTRA_LAYER.cpu_pct * extra_layers;
-        let wall_list: Vec<Value> = self.walls.lock().unwrap().list().iter().map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name, "kind": e.wallpaper.kind.as_str(), "bundled": e.bundled, "author": e.wallpaper.author })).collect();
+        let overlay_list: Vec<Value> = self.walls.lock().unwrap().list().iter().filter(|e| e.wallpaper.kind == plinth_core::WallpaperKind::Overlay).map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name })).collect();
+        let wall_list: Vec<Value> = self.walls.lock().unwrap().list().iter().filter(|e| e.wallpaper.kind != plinth_core::WallpaperKind::Overlay).map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name, "kind": e.wallpaper.kind.as_str(), "bundled": e.bundled, "author": e.wallpaper.author })).collect();
         let wcost = match self.walls.lock().unwrap().get(&self.st.wallpaper).map(|e| impact::wallpaper_extra(e.wallpaper.kind)) {
             Some(c) => format!("adds ≈{} MB and ≈{:.1}% of one core while visible · pauses in games, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct),
             None => "no extra cost".to_string(),
         };
+        let fx_state = self.fx_status();
+        if let Some(true) = fx_state.get("drawn").and_then(Value::as_bool) {
+            let c = self.st.fx.cost();
+            cost.ram_mb += c.ram_mb;
+            cost.cpu_pct += c.cpu_pct;
+        }
         let mons_json: Vec<Value> = self
             .monitors
             .iter()
@@ -252,9 +259,38 @@ impl App {
             }
             json!({ "name": c.name, "author": c.author, "scene": c.scene, "widgets": c.widgets.len(), "monitors": c.widgets.iter().map(|p| p.monitor).max().map_or(1, |m| m as usize + 1), "missing": missing, "permissions": perms, "hosts": hosts, "haveMonitors": self.monitors.len() })
         });
-        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "snap": { "mode": self.st.snap.mode.as_str(), "grid": self.st.snap.grid }, "editing": self.editing, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "overlays": overlay_list, "fx": fx_state, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "snap": { "mode": self.st.snap.mode.as_str(), "grid": self.st.snap.grid }, "editing": self.editing, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
+    }
+
+    /// Overlay status for the hub: what is chosen, whether it is drawn, why not, and its cost.
+    fn fx_status(&self) -> Value {
+        let (kind, wall_kind) = {
+            let w = self.walls.lock().unwrap();
+            (w.get(&self.st.fx.id).map(|e| e.wallpaper.kind), w.get(&self.st.wallpaper).map(|e| e.wallpaper.kind))
+        };
+        let plan = plinth_core::motion::plan(&self.st.fx, kind, wall_kind, self.st.applied && !self.st.safe, false);
+        let c = self.st.fx.cost();
+        let why = match plan {
+            Some(plinth_core::motion::Plan::Skip(plinth_core::motion::Hidden::LiveWallpaperActive)) => "A live wallpaper is selected, and only one motion item runs by default. Choose a still picture or the Scene background to see the overlay.",
+            Some(plinth_core::motion::Plan::Skip(plinth_core::motion::Hidden::Unavailable)) => "That overlay is not available.",
+            Some(plinth_core::motion::Plan::Skip(plinth_core::motion::Hidden::NotShown)) => "It will appear when the scene is applied and Safe mode is off.",
+            _ => "",
+        };
+        json!({ "id": self.st.fx.id, "intensity": self.st.fx.intensity, "speed": self.st.fx.speed, "drawn": plan == Some(plinth_core::motion::Plan::Draw), "why": why,
+            "cost": if self.st.fx.is_on() { format!("adds about {} MB and about {:.1}% of one core while visible; paused in games, on low battery and in remote sessions, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct) } else { "no extra cost".to_string() } })
+    }
+
+    /// The overlay iframe for a monitor (the primary only: one motion item by default), or empty.
+    fn overlay_html(&self, m: &MonitorInfo, wp_html: &str) -> String {
+        if !m.primary || !wp_html.is_empty() || self.st.safe {
+            return String::new();
+        }
+        let w = self.walls.lock().unwrap();
+        let Some(e) = w.get_overlay(&self.st.fx.id) else { return String::new() };
+        // The id and entry were validated by plinth-core; the query is two numbers.
+        format!(r#"<iframe id="wo" class="wp ov" sandbox="allow-scripts" src="{}?{}" title="motion overlay" tabindex="-1"></iframe>"#, WallpaperStore::entry_url(&e.wallpaper), self.st.fx.query())
     }
 
     fn widget_name(&self, widget: &str) -> String {
@@ -368,6 +404,7 @@ impl App {
         let url = WallpaperStore::entry_url(&e.wallpaper);
         match e.wallpaper.kind {
             plinth_core::WallpaperKind::Video => format!(r#"<video id="wv" class="wp" src="{url}" muted loop autoplay playsinline disablepictureinpicture style="object-fit:{}"></video>"#, e.wallpaper.fit.css()),
+            plinth_core::WallpaperKind::Overlay => String::new(), // an overlay is never THE wallpaper
             plinth_core::WallpaperKind::Web => format!(r#"<iframe id="wf" class="wp" sandbox="allow-scripts" src="{url}" title="wallpaper"></iframe>"#),
         }
     }
@@ -422,6 +459,7 @@ impl App {
             .replace("__WALL__", &wall_css)
             .replace("__SCRIM__", scrim_css)
             .replace("__WALLPAPER__", &wp_html)
+            .replace("__OVERLAY__", &self.overlay_html(m, &wp_html))
             .replace("__MID__", if wp_html.is_empty() && stat.is_none() { s.mid } else { "transparent" })
             .replace("__GLASS__", s.glass)
             .replace("__INK__", s.ink)
@@ -1159,6 +1197,43 @@ fn main() {
                 let _ = p.send_event(Ev::Hub(j.to_string()));
             };
             let nap = |s: u64| std::thread::sleep(Duration::from_secs(s));
+            if std::env::var_os("PLINTH_AUTOTEST_FX").is_some() {
+                // Motion overlay (D36): choose, refuse bad input, yield to a live wallpaper, pause with the governor, change amount, safe mode.
+                nap(2);
+                hub(&p, r#"{"cmd":"apply"}"#);
+                nap(4);
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-rain","intensity":2,"speed":100}"#);
+                nap(4);
+                let _ = p.send_event(Ev::Auto(70));
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-nope","intensity":2,"speed":100}"#); // valid id, no such package: refused
+                hub(&p, r#"{"cmd":"overlay_set","id":"../../x","intensity":2,"speed":100}"#); // not an id at all: treated as none
+                nap(1);
+                let _ = p.send_event(Ev::Auto(71));
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-rain","intensity":2,"speed":100}"#);
+                hub(&p, r#"{"cmd":"wallpaper","id":"com.plinth.aurora"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(72));
+                hub(&p, r#"{"cmd":"wallpaper","id":""}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(73));
+                let _ = p.send_event(Ev::Pause(true));
+                nap(2);
+                let _ = p.send_event(Ev::Auto(74));
+                let _ = p.send_event(Ev::Pause(false));
+                nap(3);
+                let _ = p.send_event(Ev::Auto(75));
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-rain","intensity":3,"speed":150}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(76));
+                hub(&p, r#"{"cmd":"wallpaper","id":"com.plinth.fx-rain"}"#); // an overlay is never THE wallpaper
+                nap(1);
+                let _ = p.send_event(Ev::Auto(77));
+                hub(&p, r#"{"cmd":"safe","on":true}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(78));
+                let _ = p.send_event(Ev::Auto(79));
+                return;
+            }
             if std::env::var_os("PLINTH_AUTOTEST_MOODS").is_some() {
                 let cards = std::env::var("PLINTH_CARDS").unwrap_or_default();
                 let ctx = |app: &str, fs: bool, now: u64| Context { foreground_app: app.into(), fullscreen: fs, on_battery: false, minute_of_day: 600, now_secs: now };
@@ -1329,6 +1404,8 @@ fn main() {
     }
     let _ = &sec_last;
     let mut mon_snaps: Vec<MonSnap> = Vec::new();
+    let mut fx_snaps: Vec<(String, Value)> = Vec::new();
+    let fx_js: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let mut lp = LibProbe::default();
     let mut mood_snaps: Vec<(String, String, bool, usize, bool, bool)> = Vec::new();
     let mut fs_test: Option<Window> = None;
@@ -1577,8 +1654,8 @@ fn main() {
                             if let Some(sc) = p.get("scene").and_then(Value::as_str) {
                                 app.st.scene = scene(sc).id.to_string();
                             }
-                            app.st.wallpaper = p.get("wallpaper").and_then(Value::as_str).filter(|w| w.is_empty() || app.walls.lock().unwrap().get(w).is_some()).unwrap_or("").to_string();
-                            app.st.monitor_walls = p.get("monitor_walls").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, w)| w.as_str().filter(|w| app.walls.lock().unwrap().get(w).is_some()).map(|w| (k.clone(), w.to_string()))).collect()).unwrap_or_default();
+                            app.st.wallpaper = p.get("wallpaper").and_then(Value::as_str).filter(|w| w.is_empty() || app.walls.lock().unwrap().get_live(w).is_some()).unwrap_or("").to_string();
+                            app.st.monitor_walls = p.get("monitor_walls").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, w)| w.as_str().filter(|w| app.walls.lock().unwrap().get_live(w).is_some()).map(|w| (k.clone(), w.to_string()))).collect()).unwrap_or_default();
                             app.st.placements = p.get("placements").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect()).unwrap_or_default();
                             app.st.fallback = p.get("fallback").and_then(Value::as_str).unwrap_or("").to_string();
                             app.st.scrim = p.get("scrim").and_then(Value::as_str).filter(|m| ["none", "dim", "blur"].contains(m)).unwrap_or("none").to_string();
@@ -1776,6 +1853,18 @@ fn main() {
                             _ => msg = Some("That widget or monitor is not available.".into()),
                         }
                     }
+                    "overlay_set" => {
+                        let id = v.get("id").and_then(Value::as_str).unwrap_or("");
+                        let cfg = plinth_core::motion::MotionConfig::sanitized(id, v.get("intensity").and_then(Value::as_i64).unwrap_or(2), v.get("speed").and_then(Value::as_i64).unwrap_or(100));
+                        let known = cfg.id.is_empty() || app.walls.lock().unwrap().get_overlay(&cfg.id).is_some();
+                        if known {
+                            app.st.fx = cfg;
+                            reload = app.st.applied;
+                            msg = Some(if app.st.fx.is_on() { "Motion overlay chosen. It pauses in games and uses a little CPU while you look at the desktop.".into() } else { "Motion overlay off.".into() });
+                        } else {
+                            msg = Some("That overlay is not available.".into());
+                        }
+                    }
                     "edit_layout" => {
                         let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
                         overlays.clear();
@@ -1846,7 +1935,7 @@ fn main() {
                     }
                     "monitor_wallpaper" => {
                         let (mid, wid) = (v.get("monitor").and_then(Value::as_str).unwrap_or(""), v.get("id").and_then(Value::as_str).unwrap_or(""));
-                        let known = wid.is_empty() || app.walls.lock().unwrap().get(wid).is_some();
+                        let known = wid.is_empty() || app.walls.lock().unwrap().get_live(wid).is_some();
                         if let (Some(m), true) = (app.monitors.iter().find(|m| m.id == mid).cloned(), known) {
                             if m.primary {
                                 app.st.wallpaper = wid.to_string();
@@ -1910,7 +1999,7 @@ fn main() {
                     }
                     "wallpaper" => {
                         let id = v.get("id").and_then(Value::as_str).unwrap_or("");
-                        let name = app.walls.lock().unwrap().get(id).map(|e| e.wallpaper.name.clone());
+                        let name = app.walls.lock().unwrap().get_live(id).map(|e| e.wallpaper.name.clone());
                         match (id.is_empty(), name) {
                             (true, _) => {
                                 app.st.wallpaper.clear();
@@ -2288,6 +2377,23 @@ fn main() {
                     }
                 }
                 21..=25 | 27..=29 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                70..=78 => {
+                    let label = ["rain", "bad-ids", "with-aurora", "wallpaper-cleared", "paused", "resumed", "busy", "as-wallpaper", "safe"][(step - 70) as usize];
+                    let page = app.primary_id().and_then(|id| app.monitors.iter().find(|m| m.id == id).cloned()).map(|m| app.layer_html(&m)).unwrap_or_default();
+                    let tag: String = page.find("<iframe id=\"wo\"").map(|i| page[i..].chars().take_while(|c| *c != '>').collect()).unwrap_or_default();
+                    let served: Vec<String> = app.wall_log.lock().unwrap().iter().filter(|(p, _)| p.contains("fx-")).map(|(p, st)| format!("{p} {st}")).collect();
+                    fx_snaps.push((label.to_string(), json!({ "tag": tag, "fx": app.fx_status(), "wallpaper": app.st.wallpaper, "overlay": app.st.fx.id, "intensity": app.st.fx.intensity, "served": served, "paused": app.paused })));
+                    if let Some(l) = app.primary_id().and_then(|id| layers.get(&id)) {
+                        let (store, name) = (fx_js.clone(), label.to_string());
+                        let js = "(()=>{const o=document.getElementById('wo');return JSON.stringify({present:!!o,src:o?o.src:''})})()";
+                        let _ = l.webview.evaluate_script_with_callback(js, move |r| store.lock().unwrap().push((name.clone(), r)));
+                    }
+                }
+                79 => {
+                    let code = fx_report(&fx_snaps, &fx_js.lock().unwrap());
+                    app.persist();
+                    std::process::exit(code);
+                }
                 60 => {
                     if let Some(v) = &hub_view {
                         let _ = v.evaluate_script("show('wallpapers')");
@@ -2420,6 +2526,45 @@ fn library_report(p: &LibProbe) -> i32 {
         ("the slideshow moved to a different picture", p.key_before_slide.is_some() && p.key_after_slide.is_some() && p.key_before_slide != p.key_after_slide),
         ("Revert put every monitor's wallpaper back exactly as it was", p.before.is_some() && p.before.as_ref().map(|b| &b.wallpapers) == p.after.as_ref().map(|a| &a.wallpapers)),
         ("Revert cleared the saved snapshot", p.snapshot_cleared),
+    ];
+    let mut failed = 0;
+    for (n, ok) in &checks {
+        println!("[{}] {n}", if *ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed += 1;
+        }
+    }
+    println!("\n{} of {} checks passed", checks.len() - failed, checks.len());
+    i32::from(failed != 0)
+}
+
+/// Motion overlay checks (steps 70 to 78): the page the layer loads, what the hub is told, and the live layer's own view.
+fn fx_report(snaps: &[(String, Value)], js: &[(String, String)]) -> i32 {
+    println!("\n===== Motion overlay =====");
+    for (n, v) in snaps {
+        println!("   {n}: {v}");
+    }
+    for (n, v) in js {
+        println!("   live {n}: {v}");
+    }
+    let g = |l: &str| snaps.iter().find(|s| s.0 == l).map(|s| &s.1);
+    let live = |l: &str| js.iter().find(|s| s.0 == l).map(|s| s.1.replace("\\\"", "\"").replace('\\', "")).unwrap_or_default();
+    let tag = |l: &str| g(l).and_then(|v| v["tag"].as_str()).unwrap_or("").to_string();
+    let checks: Vec<(&str, bool)> = vec![
+        ("all nine snapshots were taken", snaps.len() == 9),
+        ("an overlay is drawn above the Scene: the layer page has a sandboxed iframe from the wallpaper origin with only two numbers in its query", { let t = tag("rain"); t.contains("sandbox=\"allow-scripts\"") && t.contains("http://pwv.localhost/com.plinth.fx-rain/index.html?i=2&s=100") && !t.contains("allow-same-origin") }),
+        ("the overlay page was really served to the layer (status 200)", g("rain").and_then(|v| v["served"].as_array()).map_or(false, |a| a.iter().any(|x| x.as_str().map_or(false, |x| x.contains("fx-rain/index.html") && x.ends_with(" 200"))))),
+        ("the live layer has the overlay frame loaded with that address", live("rain").contains("present\":true") && live("rain").contains("fx-rain/index.html?i=2&s=100")),
+        ("the hub is told it is drawn and what it costs", g("rain").map_or(false, |v| v["fx"]["drawn"] == true && v["fx"]["cost"].as_str().map_or(false, |c| c.contains("MB") && c.contains("%")))),
+        ("after a missing package and a string that is not an id, no overlay is chosen and no path is ever built from the string", g("bad-ids").map_or(false, |v| v["overlay"] == "")),
+        ("a string that is not an id means none (nothing is drawn, no path is ever built from it)", g("bad-ids").map_or(false, |v| v["tag"] == "" && v["fx"]["drawn"] == false)),
+        ("with a live wallpaper selected, only one motion item runs: the overlay is not drawn and the hub says why", g("with-aurora").map_or(false, |v| v["tag"] == "" && v["fx"]["drawn"] == false && v["fx"]["why"].as_str().map_or(false, |w| w.contains("only one motion item")))),
+        ("choosing the Scene background again brings it back", g("wallpaper-cleared").map_or(false, |v| v["tag"].as_str().map_or(false, |t| t.contains("fx-rain")))),
+        ("the governor unloads the overlay (its frame goes to a blank page, so its script stops)", live("paused").contains("about:blank")),
+        ("and loads it again when the governor lets go", live("resumed").contains("fx-rain/index.html?i=2&s=100")),
+        ("amount and speed change the numbers in the query and raise the cost", tag("busy").contains("?i=3&s=150") && g("busy").zip(g("rain")).map_or(false, |(b, r)| b["fx"]["cost"] != r["fx"]["cost"])),
+        ("an overlay cannot be chosen as the wallpaper", g("as-wallpaper").map_or(false, |v| v["wallpaper"] == "")),
+        ("Safe mode draws no overlay", g("safe").map_or(false, |v| v["tag"] == "")),
     ];
     let mut failed = 0;
     for (n, ok) in &checks {

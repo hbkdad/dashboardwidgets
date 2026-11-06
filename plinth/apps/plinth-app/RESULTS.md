@@ -26,3 +26,16 @@ Multi-monitor, DPI changes, lock/sleep/resume, explorer restart, other Windows b
 
 ## Honest caveats
 The autotest takes over the screen for about 30 s and sends Win+D. The first-run state in the test is isolated via `PLINTH_STATE`; a normal first run also grants first-party widgets their declared permissions (a policy choice: built-in widgets are trusted by default).
+
+## Motion overlays: cost on this PC (2026-11-06, branch feat/motion-overlays, release build, 20 s per run, one run per row)
+Method: `scripts/measure-wallpapers.ps1 -Overlays` (starts the app with an isolated state, Scene background, overlay on at medium amount, hub hidden; "visible" = Win+D pressed so the layer is on screen, "covered" = normal windows on top; whole process tree, private bytes and CPU over 20 s). Two real 1920x1080 monitors; the overlay is drawn on the primary only.
+
+| Overlay | RAM visible | CPU visible | RAM covered | CPU covered |
+|---|---|---|---|---|
+| none (baseline) | 320 MB | 3.48% | 326 MB | 3.33% |
+| Particles | 391 MB (+71) | 8.25% (+4.8) | 382 MB | 6.56% |
+| Soft light | 364 MB (+44) | 3.63% (+0.2) | 360 MB | 19.50% |
+| Rain | 367 MB (+47) | 9.12% (+5.6) | 372 MB | 11.18% |
+| Gradient drift | 354 MB (+34) | 11.75% (+8.3) | 355 MB | 2.86% |
+
+FACT: each overlay adds one WebView2 process and 34 to 71 MB. The CPU numbers are NOT reliable: the baseline itself was 3.4% (earlier runs of the same build on this PC measured 0.3 to 2%, so something else on the PC was active), the "covered" column is sometimes higher than "visible" (Soft light 19.5%) and single 20 s runs were used. INFERENCE: the real cost is a few percent of one core while visible. NOT MEASURED: GPU load, repeat runs on a quiet PC, why a covered layer still costs CPU for some overlays (the earlier web-wallpaper finding was about 0 when covered). The Impact Meter uses 50 MB and 5% (medium); the factors 0.7 and 1.4 for subtle and busy are UNVERIFIED.

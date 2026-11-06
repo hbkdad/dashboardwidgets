@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas{width:100%;height:100%;display:block}</style>
+<canvas id="c"></canvas><script>
+// Motion overlay: draws on a transparent canvas above the still wallpaper. No network, no storage; the only input is the two numbers in the URL.
+const q=new URLSearchParams(location.search),clamp=(v,a,b,d)=>{v=parseInt(v,10);return Number.isFinite(v)?Math.min(b,Math.max(a,v)):d};
+const I=clamp(q.get("i"),1,3,2),S=clamp(q.get("s"),25,200,100)/100;
+const c=document.getElementById("c"),x=c.getContext("2d");const W=c.width=640,H=c.height=360;let last=0;
+const N=[14,30,60][I-1],P=[];for(let k=0;k<N;k++)P.push({x:Math.random()*W,y:Math.random()*H,r:1+Math.random()*2.2,vx:(Math.random()-.5)*10,vy:-4-Math.random()*10,a:.25+Math.random()*.5,p:Math.random()*6.28});
+function draw(t,dt){x.clearRect(0,0,W,H);for(const p of P){p.x+=p.vx*dt+Math.sin(t/2000+p.p)*.15;p.y+=p.vy*dt;if(p.y<-5){p.y=H+5;p.x=Math.random()*W}if(p.x<-5)p.x=W+5;if(p.x>W+5)p.x=-5;const g=x.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*4);g.addColorStop(0,"rgba(255,255,255,"+p.a+")");g.addColorStop(1,"rgba(255,255,255,0)");x.fillStyle=g;x.beginPath();x.arc(p.x,p.y,p.r*4,0,6.283);x.fill()}}
+function frame(t){requestAnimationFrame(frame);if(t-last<41)return;const dt=Math.min((t-last)/1000,.1)*S;last=t;draw(t,dt)}
+requestAnimationFrame(frame);</script>

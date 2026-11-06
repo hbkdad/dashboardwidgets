@@ -9,6 +9,7 @@ pub mod fit;
 pub mod library;
 pub mod manifest;
 pub mod monitors;
+pub mod motion;
 pub mod placement;
 pub mod security;
 pub mod setup;

@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas{width:100%;height:100%;display:block}</style>
+<canvas id="c"></canvas><script>
+// Motion overlay: draws on a transparent canvas above the still wallpaper. No network, no storage; the only input is the two numbers in the URL.
+const q=new URLSearchParams(location.search),clamp=(v,a,b,d)=>{v=parseInt(v,10);return Number.isFinite(v)?Math.min(b,Math.max(a,v)):d};
+const I=clamp(q.get("i"),1,3,2),S=clamp(q.get("s"),25,200,100)/100;
+const c=document.getElementById("c"),x=c.getContext("2d");const W=c.width=640,H=c.height=360;let last=0;
+const N=[60,130,240][I-1],D=[];for(let k=0;k<N;k++)D.push({x:Math.random()*W,y:Math.random()*H,l:6+Math.random()*10,v:260+Math.random()*220,a:.12+Math.random()*.25});
+function draw(t,dt){x.clearRect(0,0,W,H);x.lineWidth=1;for(const d of D){d.y+=d.v*dt;d.x-=d.v*dt*.18;if(d.y>H+10){d.y=-10;d.x=Math.random()*(W+40)}if(d.x<-10)d.x=W+10;x.strokeStyle="rgba(200,220,255,"+d.a+")";x.beginPath();x.moveTo(d.x,d.y);x.lineTo(d.x+d.l*.18,d.y-d.l);x.stroke()}}
+function frame(t){requestAnimationFrame(frame);if(t-last<41)return;const dt=Math.min((t-last)/1000,.1)*S;last=t;draw(t,dt)}
+requestAnimationFrame(frame);</script>

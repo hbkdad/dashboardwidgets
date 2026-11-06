@@ -3,6 +3,7 @@
 ## Feature work 2026-11-06 (branches feat/drag-placement, then feat/motion-overlays, feat/skins; NOT merged, NOT pushed)
 - FACT (observed 2026-11-06): this PC's second monitor is now a 1920x1080 (22CV1Q, left of the primary at -1920,0), not the 1280x400 case screen of D33. Tests below ran on that layout; the 1280x400 shrink case is covered by unit tests only.
 - Drag-and-drop placement (D35) built: `plinth-core::placement` (18 tests), edit overlay (`edit.html`), hub diagram drag, snapping settings. `scripts/dragtest.ps1` (real mouse) 14/14, three runs in a row; monitors lifecycle 17/17; click test 55/55. NOT TESTED: hub-diagram drag with a real pointer, keyboard nudge, touch, mixed DPI on hardware.
+- Motion overlays (D36) built on `feat/motion-overlays`: 4 bundled overlays, hub card, governor pause, Impact Meter. `verify.ps1 -Overlay` 14/14. Cost measured once per overlay (RESULTS.md): +34 to +71 MB; CPU numbers noisy (baseline was 3.4% vs 0.3 to 2% earlier), covered case unexplained; GPU not measured.
 - Lesson: changing a window's region during a drag cancels the pointer capture (the drop arrived with stale coordinates). The overlay now widens its region while the pointer hovers a widget, never mid-drag.
 
 ## PC test run 2026-11-06 (v0.13.1, this PC: Windows 11 build 26300, two monitors, release build)

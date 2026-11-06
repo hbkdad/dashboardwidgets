@@ -81,6 +81,16 @@ impl WallpaperStore {
         self.items.iter().find(|e| e.wallpaper.id == id)
     }
 
+    /// A wallpaper the user can pick as THE wallpaper: overlays are a separate choice and are never one.
+    pub fn get_live(&self, id: &str) -> Option<&Entry> {
+        self.get(id).filter(|e| e.wallpaper.kind != WallpaperKind::Overlay)
+    }
+
+    /// A motion overlay package.
+    pub fn get_overlay(&self, id: &str) -> Option<&Entry> {
+        self.get(id).filter(|e| e.wallpaper.kind == WallpaperKind::Overlay)
+    }
+
     /// URL path the layer page uses for a wallpaper's entry file.
     pub fn entry_url(w: &Wallpaper) -> String {
         format!("http://{WALLPAPER_SCHEME}.localhost/{}/{}", w.id, w.entry)
@@ -109,7 +119,7 @@ impl WallpaperStore {
         let Ok(mut f) = std::fs::File::open(&file) else { return text(404, "not found") };
         let Ok(len) = f.metadata().map(|m| m.len()) else { return text(404, "not found") };
         let mut headers = vec![("Content-Type".to_string(), mime.to_string()), ("X-Content-Type-Options".into(), "nosniff".into()), ("Cache-Control".into(), "no-store".into()), ("Accept-Ranges".into(), "bytes".into())];
-        if entry.wallpaper.kind == WallpaperKind::Web {
+        if matches!(entry.wallpaper.kind, WallpaperKind::Web | WallpaperKind::Overlay) {
             if len > MAX_WEB_FILE {
                 return text(413, "file too large");
             }
@@ -256,6 +266,27 @@ mod tests {
         assert_eq!(s.serve("/com.plinth.one/wallpaper.json", None).status, 403);
         assert_eq!(s.serve("/com.plinth.one/nope.html", None).status, 404);
         assert_eq!(s.serve("/unknown.id/index.html", None).status, 404);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn an_overlay_is_served_with_the_same_locked_down_csp_and_a_query_string_changes_nothing() {
+        let (base, b, u) = sandbox();
+        let d = b.join("rain");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("wallpaper.json"), r#"{"id":"com.plinth.fx-rain","name":"Rain","kind":"overlay","entry":"index.html"}"#).unwrap();
+        std::fs::write(d.join("index.html"), "<canvas></canvas>").unwrap();
+        std::fs::write(d.join("data.json"), "{}").unwrap();
+        let s = WallpaperStore::new(b, u);
+        assert_eq!(s.get("com.plinth.fx-rain").unwrap().wallpaper.kind, WallpaperKind::Overlay);
+        for p in ["/com.plinth.fx-rain/index.html", "/com.plinth.fx-rain/index.html?i=3&s=150", "/com.plinth.fx-rain/index.html?i=%3Cscript%3E"] {
+            let r = s.serve(p, None);
+            assert_eq!(r.status, 200, "{p}");
+            assert_eq!(r.header("content-security-policy"), Some(WEB_CSP));
+            assert!(WEB_CSP.contains("connect-src 'none'") && WEB_CSP.contains("frame-src 'none'") && WEB_CSP.contains("default-src 'none'"));
+        }
+        assert_eq!(s.serve("/com.plinth.fx-rain/data.json", None).status, 403);
+        assert_eq!(s.serve("/com.plinth.fx-rain/wallpaper.json", None).status, 403);
         let _ = std::fs::remove_dir_all(base);
     }
 
