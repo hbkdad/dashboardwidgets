@@ -9,6 +9,10 @@
 - Custom skins (D37) built on `feat/skins`: `plinth-core::skin`, card fields, hub Skins view, SDK message for font/ink/accent. `verify.ps1 -Skins` 11/11 reads the live layer's computed styles. One screenshot OBSERVED fonts applied in widgets (Terminal mono, Paper card serif); the hub editor itself is NOT click-tested.
 - Lesson: changing a window's region during a drag cancels the pointer capture (the drop arrived with stale coordinates). The overlay now widens its region while the pointer hovers a widget, never mid-drag.
 
+## Once-over audit 2026-11-06 (v0.14.0): see `research/once-over-2026-11-06.md`
+- `cargo test --workspace` passes on v0.14.0 (128 core, 27 host, 8 proxy, 19 app). Autotests were not re-run on v0.14.0 in this audit.
+- Top open items: layer IPC trusts the `wid` field from the message (a third-party iframe has `window.ipc`; a forged Notes write did not take effect in one run, INCONCLUSIVE), no hub navigation guard, clippy about 99 warnings, no `cargo audit`, CI too thin, unexplained failure of one drag-test run.
+
 ## PC test run 2026-11-06 (v0.13.1, this PC: Windows 11 build 26300, two monitors, release build)
 - PASS: `cargo test --workspace` (83 core, 25 host, 8 proxy, 19 app; 3 app tests ignored); app autotest 21/21; fake-monitor lifecycle 15/15; Moods and cards 11/11; real-hub click test 55/55; background 3/3; log 3/3; wallpaper library end to end 10/10 on the real monitors (Windows' wallpaper registry path unchanged afterwards; Plinth's own check says Revert restored every monitor).
 - Lock/unlock: app stayed alive, memory normal, idle CPU 0.008% of the CPU afterwards; log shows widgets paused then resumed. Layer visuals after unlock NOT checked by screenshot (my window enumeration cannot see the layer: it is a child of the desktop window).
