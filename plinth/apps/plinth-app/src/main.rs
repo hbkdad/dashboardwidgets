@@ -46,6 +46,31 @@ use tao::platform::windows::WindowExtWindows;
 use tao::window::{Window, WindowBuilder};
 use wry::{WebContext, WebView, WebViewBuilder};
 
+/// Random per-run secret that only the layer page knows; see `plinth_host::parse_layer_message`.
+fn ipc_nonce() -> &'static str {
+    static NONCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NONCE.get_or_init(plinth_host::new_nonce)
+}
+
+static IPC_REFUSED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Logs a layer IPC message that did not carry the secret (the first 20, then silence); the count feeds the autotest.
+fn note_ipc_refused() {
+    let n = IPC_REFUSED.fetch_add(1, Ordering::Relaxed) + 1;
+    if n <= 20 {
+        println!("layer ipc refused: message without the layer secret (#{n}); a widget frame tried to talk to the app directly");
+    }
+}
+
+/// Main-frame navigation policy of Plinth's own web views: only the HTML the app hands them.
+fn nav_ok(url: String) -> bool {
+    let ok = plinth_host::allow_navigation(&url);
+    if !ok {
+        println!("navigation refused: {}", url.chars().take(80).collect::<String>());
+    }
+    ok
+}
+
 static HUB_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static LIB_RESCAN: AtomicBool = AtomicBool::new(false);
 
@@ -504,6 +529,7 @@ impl App {
             .replace("__GLASS__", s.glass)
             .replace("__INK__", s.ink)
             .replace("__ACCENT__", s.accent)
+            .replace("__NONCE__", ipc_nonce())
             .replace("__WIDGETS__", &Value::Array(widgets).to_string())
             .replace("__BANNER__", banner)
             .replace("__BEACON__", beacon)
@@ -623,6 +649,7 @@ fn open_overlay(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, 
     let (p, mid) = (proxy.clone(), m.id.clone());
     let view = WebViewBuilder::new()
         .with_html(html)
+        .with_navigation_handler(nav_ok)
         .with_ipc_handler(move |req: wry::http::Request<String>| {
             let _ = p.send_event(Ev::Edit { monitor: mid.clone(), msg: req.body().clone() });
         })
@@ -695,10 +722,14 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, 
     let mut b = WebViewBuilder::new_with_web_context(ctx)
         .with_html(html.to_string())
         .with_bounds(wry::Rect { position: wry::dpi::PhysicalPosition::new(0, 0).into(), size: wry::dpi::PhysicalSize::new(w, h).into() })
+        .with_navigation_handler(nav_ok)
         .with_ipc_handler(move |req: wry::http::Request<String>| {
-            let Ok(v) = serde_json::from_str::<Value>(req.body()) else { return };
-            if let (Some(wid), Some(msg)) = (v.get("wid").and_then(Value::as_str), v.get("msg").and_then(Value::as_str)) {
-                let _ = ipc_proxy.send_event(Ev::Layer { wid: wid.to_string(), msg: msg.to_string() });
+            // Widget frames can reach window.ipc too, so only a message carrying the layer page's secret names a widget.
+            match plinth_host::parse_layer_message(req.body(), ipc_nonce()) {
+                Some((wid, msg)) => {
+                    let _ = ipc_proxy.send_event(Ev::Layer { wid, msg });
+                }
+                None => note_ipc_refused(),
             }
         });
     let schemes: Vec<String> = (0..plinth_host::THIRD_PARTY_SLOTS).map(Host::scheme_for_slot).chain(std::iter::once(plinth_host::TRUSTED_SCHEME.to_string())).collect();
@@ -949,6 +980,7 @@ fn build_hub(window: &Window, ctx: &mut WebContext, proxy: &EventLoopProxy<Ev>, 
     let dp = proxy.clone();
     WebViewBuilder::new_with_web_context(ctx)
         .with_html(HUB_HTML)
+        .with_navigation_handler(nav_ok)
         .with_asynchronous_custom_protocol("pwth".to_string(), move |_id, req, responder| {
             let _ = tx.send((req.uri().path().to_string(), responder));
         })

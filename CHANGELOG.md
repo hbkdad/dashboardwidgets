@@ -3,6 +3,9 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Security
+- Layer IPC now requires a per-run secret (256-bit, known only to the layer page) before a message can name a widget; hub, layer and edit overlay refuse main-frame navigation to anything but app-generated HTML (D38). Found in the 2026-11-06 once-over: widget frames have `window.ipc`; in the tested build their messages were never delivered (0 of 3 runs), so this is defense in depth.
+- Tests: 7 unit tests in `plinth-host::ipc`; `scripts/ipctest.ps1` (6 checks, evil widget fixture in `plinth/fixtures/ipc-probe/`, positive control through PC Vitals); `verify.ps1 -Ipc`. Full verify (without the library test) passes.
 
 ## [0.14.0] - 2026-11-06
 Drag-and-drop placement, motion overlays and custom skins. Three feature branches chained (`feat/drag-placement`, `feat/motion-overlays`, `feat/skins`); not yet merged to main or tagged.
