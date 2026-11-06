@@ -1,6 +1,22 @@
 # Progress log (update at the end of every work session)
 
-## State as of 2026-11-06 (v0.13.1)
+## v0.14.0 feature work 2026-11-06 (chained branches feat/drag-placement -> feat/motion-overlays -> feat/skins; release commit on feat/skins; NOT merged, NOT tagged, NOT pushed)
+- Final full run with all three features: tests 128 core / 27 host / 8 proxy / 19 app; autotest 21/21; monitors 17/17; Moods 11/11; overlays 14/14; skins 11/11; drag 14/14; click 59/59; background 3/3; log 3/3. Library end-to-end and lock/sleep NOT re-run. One drag-stage failure (8/14) in one full chain, 15 other runs passed; cause not found (first drag was not registered; candidates: the overlay not yet interactive right after the previous app exits, Win+D state left by the autotest).
+- To publish: merge the three branches in order, then `git tag -a v0.14.0 -m "..."` on main and push with tags (CONTRIBUTING.md). Nothing was pushed.
+- FACT (observed 2026-11-06): this PC's second monitor is now a 1920x1080 (22CV1Q, left of the primary at -1920,0), not the 1280x400 case screen of D33. Tests below ran on that layout; the 1280x400 shrink case is covered by unit tests only.
+- Drag-and-drop placement (D35) built: `plinth-core::placement` (18 tests), edit overlay (`edit.html`), hub diagram drag, snapping settings. `scripts/dragtest.ps1` (real mouse) 14/14, three runs in a row; monitors lifecycle 17/17; click test 55/55. NOT TESTED: hub-diagram drag with a real pointer, keyboard nudge, touch, mixed DPI on hardware.
+- Motion overlays (D36) built on `feat/motion-overlays`: 4 bundled overlays, hub card, governor pause, Impact Meter. `verify.ps1 -Overlay` 14/14. Cost measured once per overlay (RESULTS.md): +34 to +71 MB; CPU numbers noisy (baseline was 3.4% vs 0.3 to 2% earlier), covered case unexplained; GPU not measured.
+- Custom skins (D37) built on `feat/skins`: `plinth-core::skin`, card fields, hub Skins view, SDK message for font/ink/accent. `verify.ps1 -Skins` 11/11 reads the live layer's computed styles. One screenshot OBSERVED fonts applied in widgets (Terminal mono, Paper card serif); the hub editor itself is NOT click-tested.
+- Lesson: changing a window's region during a drag cancels the pointer capture (the drop arrived with stale coordinates). The overlay now widens its region while the pointer hovers a widget, never mid-drag.
+
+## PC test run 2026-11-06 (v0.13.1, this PC: Windows 11 build 26300, two monitors, release build)
+- PASS: `cargo test --workspace` (83 core, 25 host, 8 proxy, 19 app; 3 app tests ignored); app autotest 21/21; fake-monitor lifecycle 15/15; Moods and cards 11/11; real-hub click test 55/55; background 3/3; log 3/3; wallpaper library end to end 10/10 on the real monitors (Windows' wallpaper registry path unchanged afterwards; Plinth's own check says Revert restored every monitor).
+- Lock/unlock: app stayed alive, memory normal, idle CPU 0.008% of the CPU afterwards; log shows widgets paused then resumed. Layer visuals after unlock NOT checked by screenshot (my window enumeration cannot see the layer: it is a child of the desktop window).
+- Sleep/resume (Windows log: sleep 12:26:14, resume 12:26:18): app alive, idle CPU 0.017%, and a screenshot after resume shows the clock, vitals, graphs, notes and build widgets on both monitors (OBSERVED). Short sleep (about 4 s), not an overnight one.
+- NOT TESTED: video wallpaper checks (needs a test clip; `make-test-video.py` needs a browser to record it), display wake/hot-plug on a real dock, mixed DPI, virtual desktops, Win key after wake (Plinth has no Start menu), a real game, low-end hardware. Script quirk found: my lock/sleep helper closed the hub, so its final Revert click did not run (isolated test state only).
+- Compiler warnings present in the app crate (unused assignments, dead code); CI has no clippy step yet.
+
+## State as of 2026-11-06 (v0.13.1, superseded by v0.14.0 above)
 - v0.13.0: Live Graphs widget; new first-party widgets are auto-granted what they declare. v0.13.1: no console window (GUI subsystem), rotating log, Settings diagnostics report, verify script waits for the app. v0.12.1: hub memory measured at 10k pictures.
 - Unit tests (2026-11-06, `cargo test --workspace`): 83 core, 25 host, 8 proxy, 19 app (3 ignored), all pass. App autotests, click test and release build NOT re-run in this audit.
 - Seelen UI hands-on test done: `research/seelen-ui-handson-test.md` (permission prompts exist and persist; coarse; idle about 1.3 GB WS on two monitors; Win+D did not hide its dock). PRD 1.1 updated.

@@ -1,0 +1,98 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+/* Edit-layout overlay (D35): a trusted page of Plinth's own. It draws no widget content and loads nothing from outside. The window is
+   shaped to the widgets, so every pixel outside them still belongs to the desktop icons underneath. */
+html,body{margin:0;height:100%;overflow:hidden;background:#12172a;color:#fff;font:600 13px 'Segoe UI',system-ui,sans-serif;user-select:none;cursor:default}
+.ew{position:fixed;box-sizing:border-box;border:2px solid #7cf2c8;border-radius:22px;background:#12172a;display:grid;place-items:center;text-align:center;cursor:grab;touch-action:none;outline:none}
+.ew:focus-visible{border-color:#fff;box-shadow:0 0 0 3px #7cf2c8}
+.ew.drag{cursor:grabbing;border-style:dashed}
+.ew.locked{border-color:#ffb454;border-style:dashed;cursor:not-allowed;color:#ffb454}
+.ew small{display:block;font-weight:400;opacity:.8;margin-top:2px}
+.ghost{position:fixed;box-sizing:border-box;border:2px dashed #fff;border-radius:22px;pointer-events:none;display:none}
+.gv,.gh{position:fixed;background:#ffb454;pointer-events:none;display:none}
+.gv{width:1px;top:0;bottom:0}.gh{height:1px;left:0;right:0}
+.bar{position:fixed;left:50%;transform:translateX(-50%);top:__BARTOP__px;width:540px;box-sizing:border-box;justify-content:space-between;padding:10px 16px;border-radius:14px;background:#12172a;border:1px solid #7cf2c8;display:flex;gap:12px;align-items:center;white-space:nowrap}
+.bar button{font:inherit;color:#0b0c0f;background:#7cf2c8;border:0;border-radius:10px;padding:6px 14px;cursor:pointer}
+.bar span{font-weight:400}
+</style></head>
+<body>
+<div class="gv" id="gv"></div><div class="gh" id="gh"></div>
+<div class="ghost" id="ghost"></div>
+<div id="items"></div>
+<div class="bar" id="bar" hidden><span>Drag a widget. Arrow keys nudge a focused one. Esc finishes.</span><button id="done">Done</button></div>
+<script>
+const D = __DATA__;
+const items = document.getElementById('items'), ghost = document.getElementById('ghost'), gv = document.getElementById('gv'), gh = document.getElementById('gh');
+const post = (m) => window.ipc.postMessage(JSON.stringify(m));
+let drag = null, els = {}, hovering = false;
+// The window is shaped to the widgets; while the pointer is on one, Rust widens it to the whole monitor so a drag can go anywhere.
+function hover(on) { if (hovering !== on) { hovering = on; post({ t: 'hover', on }); } }
+function build() {
+  items.innerHTML = ''; els = {};
+  for (const w of D.widgets) {
+    const e = document.createElement('div');
+    e.className = 'ew' + (w.locked ? ' locked' : '');
+    e.dataset.id = w.id;
+    e.style.cssText = `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px`;
+    e.setAttribute('role', 'button');
+    e.setAttribute('aria-label', w.name + (w.locked ? ' (cannot be moved now: ' + w.why + ')' : ' (drag, or use the arrow keys)'));
+    e.tabIndex = w.locked ? -1 : 0;
+    const t = document.createElement('div');
+    t.textContent = w.name;
+    if (w.locked) { const s = document.createElement('small'); s.textContent = w.why; t.appendChild(s); }
+    e.appendChild(t);
+    e.addEventListener('pointerenter', () => hover(true));
+    e.addEventListener('pointerleave', () => { if (!drag) hover(false); });
+    items.appendChild(e); els[w.id] = e;
+  }
+  document.getElementById('bar').hidden = !D.main;
+}
+build();
+function cur(id) { const e = els[id]; return { x: parseFloat(e.style.left), y: parseFloat(e.style.top) }; }
+addEventListener('pointerdown', (ev) => {
+  const e = ev.target.closest('.ew');
+  if (!e || e.classList.contains('locked') || ev.button !== 0) return;
+  const c = cur(e.dataset.id);
+  drag = { id: e.dataset.id, e, dx: ev.clientX - c.x, dy: ev.clientY - c.y, last: 0 };
+  e.setPointerCapture(ev.pointerId); e.classList.add('drag');
+  ev.preventDefault();
+});
+addEventListener('pointermove', (ev) => {
+  if (!drag) return;
+  const x = ev.clientX - drag.dx, y = ev.clientY - drag.dy;
+  drag.e.style.left = x + 'px'; drag.e.style.top = y + 'px';
+  const now = performance.now();
+  if (now - drag.last > 40) { drag.last = now; post({ t: 'preview', id: drag.id, x, y }); }
+});
+function end(ev) {
+  if (!drag) return;
+  const d = drag; drag = null; d.e.classList.remove('drag');
+  const x = ev.clientX - d.dx, y = ev.clientY - d.dy;
+  ghost.style.display = gv.style.display = gh.style.display = 'none';
+  post({ t: 'drop', id: d.id, x, y });
+  if (!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.ew')) hover(false);
+}
+addEventListener('pointerup', end);
+// A cancelled pointer (window lost it) is not a drop: put the widget back where it was.
+addEventListener('pointercancel', () => { if (!drag) return; drag = null; ghost.style.display = gv.style.display = gh.style.display = 'none'; build(); hover(false); });
+addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' || ev.key === 'Enter' && ev.target.id === 'done') { post({ t: 'done' }); return; }
+  const e = ev.target.closest && ev.target.closest('.ew');
+  const k = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+  if (!e || !k || e.classList.contains('locked')) return;
+  ev.preventDefault();
+  const step = ev.shiftKey ? 1 : Math.max(4, D.snap.grid), c = cur(e.dataset.id);
+  post({ t: 'nudge', id: e.dataset.id, x: c.x + k[0] * step, y: c.y + k[1] * step });
+});
+document.getElementById('done').onclick = () => post({ t: 'done' });
+// Rust answers a preview with the snapped place, and sends the new layout after a drop.
+window.__ghost = (g) => {
+  if (!drag) return;
+  ghost.style.cssText = `display:${g.here ? 'block' : 'none'};left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px`;
+  gv.style.display = g.gx == null || !g.here ? 'none' : 'block'; if (g.gx != null) gv.style.left = g.gx + 'px';
+  gh.style.display = g.gy == null || !g.here ? 'none' : 'block'; if (g.gy != null) gh.style.top = g.gy + 'px';
+};
+window.__layout = (data) => { Object.assign(D, data); build(); };
+</script></body></html>

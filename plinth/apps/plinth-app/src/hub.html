@@ -61,6 +61,7 @@ h1{font:600 clamp(1.8rem,3vw,2.6rem)/1.1 var(--disp);letter-spacing:-.025em}h2{f
 .mon.pri{border-color:var(--accent)}.mon.over{box-shadow:0 0 0 3px var(--accent)}.mon.target{cursor:pointer;border-style:dashed}
 .mon .no{position:absolute;right:8px;bottom:2px;font:700 2.2rem/1 var(--disp);opacity:.25}.mon .mn{font-size:.6875rem;color:var(--mut);display:block;max-width:80%}
 .wchip{display:inline-block;margin:2px 3px 0 0;padding:2px 8px;border-radius:8px;border:1px solid var(--bd2);background:var(--s3);font-size:.6875rem;touch-action:none;cursor:grab}
+.wchip.pos{position:absolute;margin:0;padding:0 4px;display:grid;place-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;box-sizing:border-box;border-radius:5px;background:var(--s3);line-height:1.1}.wchip.drag{z-index:5;opacity:.85;box-shadow:0 0 0 2px var(--accent)}.wchip.locked{cursor:not-allowed}
 .wchip.parked{border-style:dashed;color:var(--amb);border-color:var(--amb)}.wchip.sel{outline:2px solid var(--accent)}.ghost{position:fixed;z-index:50;pointer-events:none;opacity:.9}
 .mcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:22px}.mcard{padding:18px}
 select{font:inherit;color:var(--tx);background:var(--s3);border:1px solid var(--bd2);border-radius:10px;padding:6px 10px;max-width:100%}
@@ -87,6 +88,7 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="nav" id="nav">
 <button data-v="scenes" aria-current="page"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg>Scenes</button>
 <button data-v="wallpapers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Wallpapers</button>
+<button data-v="skins"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="14" rx="5"/><path d="M8 20h9a4 4 0 0 0 4-4V9"/></svg>Skins</button>
 <button data-v="security"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>Security</button>
 <button data-v="monitors"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="12" height="9" rx="2"/><rect x="16" y="9" width="6" height="9" rx="2"/><path d="M6 18h4"/></svg>Monitors</button>
 <button data-v="moods"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M8 3.5l-2 2M16 3.5l2 2"/></svg>Moods</button>
@@ -105,14 +107,31 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <div class="bar"><div><b id="sn">Graphite</b> <span class="chip" id="cost">…</span> <span class="chip ok" id="ap" hidden>Applied</span> <span class="chip warn" id="pz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="sw" id="motion" role="switch" aria-checked="false" aria-label="Live motion wallpaper (uses more CPU)" title="Live motion wallpaper: uses noticeably more CPU and GPU; pauses in games"></button><span style="font-size:.8125rem;color:var(--mut)">Live motion</span><button class="btn g" id="rev" disabled>Revert</button><button class="btn p" id="apply">Apply to my desktop</button></div></div></section>
 
 <section class="view" id="v-monitors" aria-labelledby="hm"><div class="eb">Monitors</div><h1 id="hm">Every widget, exactly where you want it.</h1>
-<p class="lede">Your screens as Windows arranges them. Drag a widget onto a monitor, or click a widget and then a monitor. If a monitor is unplugged, its widgets wait on another screen and return by themselves.</p>
-<div class="row mt"><button class="btn" id="midentify">Identify monitors</button><span class="chip" id="mfake" hidden>Test monitors</span></div>
+<p class="lede">Your screens as Windows arranges them. Drag a widget in the diagram to place it exactly, or press Edit layout and drag it on your real desktop (it snaps to edges and a grid). You can also click a widget and then a monitor. If a monitor is unplugged, its widgets wait on another screen and return by themselves.</p>
+<div class="row mt" style="flex-wrap:wrap"><button class="btn p" id="medit" aria-pressed="false">Edit layout on my desktop</button><label style="font-size:.8125rem;color:var(--mut)">Snap <select id="msnap" aria-label="Snapping"><option value="both">Edges and grid</option><option value="edges">Edges only</option><option value="grid">Grid only</option><option value="off">Off</option></select></label><label style="font-size:.8125rem;color:var(--mut)">Grid <select id="mgrid" aria-label="Grid size"><option value="12">12</option><option value="24">24</option><option value="48">48</option><option value="96">96</option></select></label><button class="btn" id="midentify">Identify monitors</button><span class="chip" id="mfake" hidden>Test monitors</span></div>
 <div class="mdiag" id="mdiag" role="group" aria-label="Monitor layout"></div>
 <div class="mcards" id="mcards"></div>
 <div class="grid"><div class="card" style="padding:20px"><h2>Widgets</h2><div id="mwidgets" class="mt" style="display:grid;gap:10px"></div></div>
 <div class="card" style="padding:20px"><h2>If a monitor is unplugged</h2><div class="pr"><div class="w"><b>Park widgets on</b><span>They return to their own monitor when it reconnects.</span></div><select id="mfallback" aria-label="Monitor for parked widgets"></select></div>
 <h2 style="margin-top:14px">Recovery</h2><div class="row mt" style="flex-wrap:wrap"><button class="btn" id="mparkall">Bring all widgets to the primary monitor</button><button class="btn g" id="mreset">Reset widget positions</button><button class="btn g" id="mundo" hidden>Undo reset</button></div>
 <p style="color:var(--mut);font-size:.8125rem;margin-top:10px">Bringing widgets to the primary monitor is temporary and never changes where you put them. Reset puts every widget back at its default place, and can be undone.</p></div></div></section>
+
+<section class="view" id="v-skins" aria-labelledby="hsk"><div class="eb">Skins</div><h1 id="hsk">Make every widget look like yours.</h1>
+<p class="lede">A skin changes how widgets look: glass color, frost, see-through amount, rounded corners, edge, shadow and font. It is only a few settings and never code, so a skin inside a shared setup card can do nothing but restyle your widgets. Pick one for everything, or give a single widget its own.</p>
+<div class="row mt" style="flex-wrap:wrap"><label style="font-size:.8125rem;color:var(--mut)">All widgets <select id="skglobal" aria-label="Skin for all widgets"></select></label><span class="chip" id="skwarn" hidden>Text may be hard to read with this skin</span></div>
+<div class="grid"><div class="card" style="padding:20px"><h2>Skins</h2><div id="sklist" role="radiogroup" aria-label="Skins" style="display:grid;gap:8px;margin-top:10px"></div><div class="row mt"><button class="btn" id="skcopy">Make a copy to edit</button><button class="btn g" id="skdel" hidden>Delete</button></div></div>
+<div class="card" style="padding:20px"><h2 id="skedtitle">Look</h2><p id="skedhint" style="color:var(--mut);font-size:.8125rem;margin-top:6px"></p><div id="skedit">
+<div class="fld"><label for="sk-name">Name</label><input type="text" id="sk-name" maxlength="40"></div>
+<div class="fld"><label for="sk-tint">Glass color</label><input type="color" id="sk-tint"><label style="min-width:0"><input type="checkbox" id="sk-tint-auto"> use the scene's</label></div>
+<div class="fld"><label for="sk-opacity">See-through</label><input type="range" id="sk-opacity" min="0" max="100"><span id="sk-opacity-v" style="min-width:3em"></span><label style="min-width:0"><input type="checkbox" id="sk-opacity-auto"> use the scene's</label></div>
+<div class="fld"><label for="sk-frost">Frost (blur)</label><input type="range" id="sk-frost" min="0" max="100"><span id="sk-frost-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-radius">Corners</label><input type="range" id="sk-radius" min="0" max="48"><span id="sk-radius-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-border">Edge light</label><input type="range" id="sk-border" min="0" max="100"><span id="sk-border-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-shadow">Shadow</label><input type="range" id="sk-shadow" min="0" max="100"><span id="sk-shadow-v" style="min-width:3em"></span></div>
+<div class="fld"><label for="sk-font">Font</label><select id="sk-font"></select></div>
+<div class="fld"><label for="sk-ink">Text color</label><select id="sk-ink"><option value="auto">Follow the scene</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+<div class="fld"><label for="sk-accent">Accent</label><input type="color" id="sk-accent"><label style="min-width:0"><input type="checkbox" id="sk-accent-auto"> use the scene's</label></div></div></div></div>
+<div class="card" style="padding:20px;margin-top:18px"><h2>Per widget</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A widget with its own skin ignores the one for all widgets. Widgets from other creators use the frame (glass, corners, edge, shadow); font and accent are applied by widgets that use Plinth's SDK.</p><div id="skwidgets" style="display:grid;gap:10px;margin-top:10px"></div></div></section>
 
 <section class="view" id="v-security" aria-labelledby="hs"><div class="eb">Security Center</div><h1 id="hs">See what your PC is doing.</h1>
 <p class="lede">A clear look at your protection, what is connected to the internet, what is listening for connections, and what starts with Windows. Plinth reports facts and leaves the judgement to you.</p>
@@ -129,6 +148,9 @@ input[type=text]{font:inherit;color:var(--tx);background:var(--s2);border:1px so
 <h2 class="mt" style="margin-top:34px">Live wallpapers</h2>
 <div class="drop"><div><b>Add your own video</b><div style="color:var(--mut);font-size:.8125rem">Drag an .mp4, .webm or .m4v file onto this window. Plinth keeps its own copy; your original is never changed. Dropping a folder adds it to your library instead.</div></div><div class="row"><button class="btn g" id="wfolder">Open folder</button><button class="btn g" id="wscan">Rescan</button></div></div>
 <div class="wgrid" id="wgrid" role="radiogroup" aria-label="Choose a live wallpaper"></div>
+<div class="card" style="padding:20px;margin-top:18px" id="fxcard"><div class="row between"><h2>Motion overlay</h2><span class="chip" id="fxcost">no extra cost</span></div><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A gentle animation (particles, soft light, rain, gradient drift) drawn above a still picture or the Scene background. It runs in the same locked box as live wallpapers: it cannot reach the internet, your files or your widgets. Off by default; one motion item at a time.</p>
+<div class="row mt" style="flex-wrap:wrap"><label style="font-size:.8125rem;color:var(--mut)">Overlay <select id="fxid" aria-label="Motion overlay"></select></label><label style="font-size:.8125rem;color:var(--mut)">Amount <select id="fxint" aria-label="Overlay amount"><option value="1">Subtle</option><option value="2">Medium</option><option value="3">Busy</option></select></label><label style="font-size:.8125rem;color:var(--mut)">Speed <select id="fxspd" aria-label="Overlay speed"><option value="50">Slow</option><option value="100">Normal</option><option value="150">Fast</option></select></label></div>
+<div class="note" id="fxwhy" hidden style="margin-top:12px"></div></div>
 <div class="grid"><div class="card" style="padding:20px"><h2>Behind widgets</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">A busy picture can make widget text hard to read. Shade it behind the widgets.</p><div class="fld"><label for="lscrim">Shading</label><select id="lscrim" aria-label="Shading behind widgets"><option value="none">None</option><option value="dim">Dim</option><option value="blur">Soften and dim</option></select></div></div>
 <div class="card" style="padding:20px"><h2>Profiles</h2><p style="color:var(--mut);font-size:.8125rem;margin-top:6px">Save wallpapers, widgets and monitor assignments together, and restore them in one click.</p><div class="fld"><input type="text" id="pname" maxlength="40" placeholder="Name, for example Work" aria-label="Profile name"><button class="btn" id="psave">Save profile</button></div><div id="plist" class="mt" style="display:grid;gap:8px"></div></div></div>
 <div class="bar"><div><b id="wn">None</b> <span class="chip" id="wcost">…</span> <span class="chip ok" id="wap" hidden>Applied</span> <span class="chip warn" id="wpz" hidden>Paused: game, battery or remote session</span></div><div class="row"><button class="btn g" id="rev2" disabled>Revert</button><button class="btn p" id="apply2">Apply to my desktop</button></div></div></section>
@@ -217,6 +239,7 @@ function render(){
     S.wallpapers.forEach(w=>add(w.id,w.name,(w.kind==='video'?'Video':'Animated page')+(w.bundled?' · Plinth':' · Yours'),w.kind==='video'?'v':'',icon[w.kind]||'',!w.bundled))}
   const cw=S.wallpapers.find(w=>w.id===S.wallpaper);
   $('#wn').textContent=cw?cw.name:'Scene background';$('#wcost').textContent=S.wallpaperCost;$('#wap').hidden=!S.applied;$('#wpz').hidden=!S.paused;$('#rev2').disabled=!S.applied;$('#apply2').textContent=S.applied?'Apply this wallpaper':'Apply to my desktop';
+  renderFx();renderSkins();
   renderMon();
   renderLibState();
   renderMoods();renderSettings();
@@ -249,12 +272,12 @@ let selW=null,drag=null;
 function sendAssign(w,m){send('assign',{widget:w,monitor:m});selW=null}
 function renderMon(){
   const M=S.monitors||[];if(!M.length)return;
-  const key=JSON.stringify([S.monitors,S.placements,S.wallpapers,S.fallback,S.parkAll,S.canUndo,selW]);if(R.mon===key)return;R.mon=key;
-  $('#mfake').hidden=!S.fakeMonitors;
+  const key=JSON.stringify([S.monitors,S.placements,S.wallpapers,S.fallback,S.parkAll,S.canUndo,S.snap,S.editing,selW]);if(R.mon===key)return;R.mon=key;
+  $('#mfake').hidden=!S.fakeMonitors;$('#medit').textContent=S.editing?'Finish editing':'Edit layout on my desktop';$('#medit').setAttribute('aria-pressed',!!S.editing);if(S.snap){$('#msnap').value=S.snap.mode;$('#mgrid').value=String(S.snap.grid);if($('#mgrid').value!==String(S.snap.grid)){const o=document.createElement('option');o.value=o.textContent=S.snap.grid;$('#mgrid').appendChild(o);$('#mgrid').value=String(S.snap.grid)}}
   const minx=Math.min(...M.map(m=>m.x)),miny=Math.min(...M.map(m=>m.y)),maxx=Math.max(...M.map(m=>m.x+m.w)),maxy=Math.max(...M.map(m=>m.y+m.h)),W=maxx-minx,H=maxy-miny;
   const box=$('#mdiag');box.style.setProperty('--ar',(W/H).toFixed(3));
   const pct=(v,t)=>(100*v/t).toFixed(3)+'%';
-  box.innerHTML=M.map(m=>{const chips=(S.placements||[]).filter(p=>p.monitor===m.id).map(p=>`<span class="wchip ${p.parked?'parked':''} ${selW===p.widget?'sel':''}" data-w="${esc(p.widget)}" role="button" tabindex="0" aria-label="${esc(p.name)}${p.parked?' (parked, waiting for its monitor)':''}">${esc(p.name)}${p.parked?' ·parked':''}</span>`).join('');
+  box.innerHTML=M.map(m=>{const chips=(S.placements||[]).filter(p=>p.monitor===m.id).map(p=>{const r=p.rect,pos=r?`style="left:${pct(r[0],m.wd)};top:${pct(r[1],m.hd)};width:${pct(r[2],m.wd)};height:${pct(r[3],m.hd)}"`:'';return `<span class="wchip ${r?'pos':''} ${p.parked?'parked':''} ${p.locked?'locked':''} ${selW===p.widget?'sel':''}" data-w="${esc(p.widget)}" ${pos} role="button" tabindex="0" aria-label="${esc(p.name)}${p.parked?' (parked, waiting for its monitor)':''}">${esc(p.name)}${p.parked?' ·parked':''}</span>`}).join('');
     return `<div class="mon ${m.primary?'pri':''} ${selW?'target':''}" data-id="${esc(m.id)}" style="left:${pct(m.x-minx,W)};top:${pct(m.y-miny,H)};width:${pct(m.w,W)};height:${pct(m.h,H)}"><span class="mn">${esc(m.name)}${m.primary?' ★':''}</span>${chips}<span class="no">${esc(m.n)}</span></div>`}).join('');
   $('#mcards').innerHTML=M.map(m=>`<div class="card mcard"><div class="row between"><b>${esc(m.n)} · ${esc(m.name)}</b>${m.primary?'<span class="chip ok">Primary</span>':''}</div>
     <div class="srow"><span>Resolution</span><span>${esc(m.w)} × ${esc(m.h)} (${m.portrait?'portrait':'landscape'})</span></div><div class="srow"><span>Scale</span><span>${esc(m.scale)}%</span></div><div class="srow"><span>Refresh rate</span><span>${m.hz?esc(m.hz)+' Hz':'unknown'}</span></div>
@@ -266,15 +289,17 @@ function renderMon(){
   const fb=$('#mfallback');fb.innerHTML=`<option value="">Primary monitor</option>`+M.map(m=>`<option value="${esc(m.id)}" ${S.fallback===m.id?'selected':''}>${esc(m.n)} · ${esc(m.name)}</option>`).join('');fb.onchange=()=>send('fallback',{monitor:fb.value});
   $('#mparkall').textContent=S.parkAll?'Return widgets to their monitors':'Bring all widgets to the primary monitor';$('#mundo').hidden=!S.canUndo;
 }
-$('#midentify').onclick=()=>send('identify');$('#mparkall').onclick=()=>send('park_all',{on:!S.parkAll});$('#mreset').onclick=()=>send('reset_positions');$('#mundo').onclick=()=>send('undo_positions');
+$('#midentify').onclick=()=>send('identify');$('#medit').onclick=()=>send('edit_layout',{on:!S.editing});$('#msnap').onchange=$('#mgrid').onchange=()=>send('snap_set',{mode:$('#msnap').value,grid:+$('#mgrid').value});$('#mparkall').onclick=()=>send('park_all',{on:!S.parkAll});$('#mreset').onclick=()=>send('reset_positions');$('#mundo').onclick=()=>send('undo_positions');
 // Pointer-based drag (HTML5 drag and drop is disabled by the native file-drop handler). A press without movement selects the
 // widget; clicking a monitor then moves it there.
 const mdiag=$('#mdiag');
-mdiag.addEventListener('pointerdown',(e)=>{const c=e.target.closest('.wchip');if(!c)return;drag={w:c.dataset.w,x:e.clientX,y:e.clientY,moved:false,ghost:null};e.preventDefault()});
-document.addEventListener('pointermove',(e)=>{if(!drag)return;if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>5){drag.moved=true;const g=document.createElement('div');g.className='ghost wchip';g.textContent=(S.placements.find(p=>p.widget===drag.w)||{}).name||'';document.body.append(g);drag.ghost=g}
-  if(drag.ghost){drag.ghost.style.left=(e.clientX+8)+'px';drag.ghost.style.top=(e.clientY+8)+'px';const t=document.elementFromPoint(e.clientX,e.clientY);$$('.mon').forEach(m=>m.classList.toggle('over',!!t&&m===t.closest('.mon')))}});
-document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=null;if(d.ghost)d.ghost.remove();$$('.mon').forEach(m=>m.classList.remove('over'));
-  if(d.moved){const t=document.elementFromPoint(e.clientX,e.clientY),m=t&&t.closest('.mon');if(m)sendAssign(d.w,m.dataset.id)}else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
+mdiag.addEventListener('pointerdown',(e)=>{const c=e.target.closest('.wchip');if(!c)return;const r=c.getBoundingClientRect();drag={w:c.dataset.w,el:c,x:e.clientX,y:e.clientY,left:r.left,top:r.top,wd:r.width,ht:r.height,moved:false};e.preventDefault()});
+document.addEventListener('pointermove',(e)=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(!drag.moved&&Math.hypot(dx,dy)>5){const pl=(S.placements||[]).find(p=>p.widget===drag.w);if(pl&&pl.locked){drag=null;toast('This widget cannot be moved now ('+pl.locked+').');return}drag.moved=true;drag.el.classList.add('drag')}
+  if(drag.moved){drag.el.style.transform=`translate(${dx}px,${dy}px)`;const t=document.elementFromPoint(drag.left+dx+drag.wd/2,drag.top+dy+drag.ht/2);$$('.mon').forEach(m=>m.classList.toggle('over',!!t&&m===t.closest('.mon')))}});
+document.addEventListener('pointerup',(e)=>{if(!drag)return;const d=drag;drag=null;$$('.mon').forEach(m=>m.classList.remove('over'));
+  if(d.moved){const dx=e.clientX-d.x,dy=e.clientY-d.y;d.el.style.visibility='hidden';const t=document.elementFromPoint(d.left+dx+d.wd/2,d.top+dy+d.ht/2);d.el.style.visibility='';d.el.style.transform='';d.el.classList.remove('drag');const mel=t&&t.closest('.mon');
+    if(mel){const mm=(S.monitors||[]).find(m=>m.id===mel.dataset.id),br=mel.getBoundingClientRect();if(mm){const k=mm.wd/br.width;send('place',{widget:d.w,monitor:mm.id,x:(d.left+dx-br.left)*k,y:(d.top+dy-br.top)*k});selW=null;return}}R.mon=null;renderMon()}
+  else{selW=selW===d.w?null:d.w;R.mon=null;renderMon()}});
 mdiag.addEventListener('click',(e)=>{if(e.target.closest('.wchip'))return;const m=e.target.closest('.mon');if(m&&selW)sendAssign(selW,m.dataset.id)});
 mdiag.addEventListener('keydown',(e)=>{const c=e.target.closest('.wchip');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();selW=selW===c.dataset.w?null:c.dataset.w;R.mon=null;renderMon()}});
 
@@ -289,6 +314,7 @@ function renderMoods(){const m=S.moods;if(!m)return;
   const c=S.card,mod=$('#cardm');mod.classList.toggle('on',!!c);
   if(c){$('#cardt').textContent=c.name;const pr=Object.entries(c.permissions||{});
     $('#cardb').innerHTML=`<div style="color:var(--mut)">By ${esc(c.author)} · ${esc(c.widgets)} widgets on ${esc(c.monitors)} monitor${c.monitors>1?'s':''} · scene ${esc(c.scene)}${c.monitors>c.haveMonitors?`<br>You have ${esc(c.haveMonitors)} monitor${c.haveMonitors>1?'s':''}; the rest land on your primary.`:''}</div>
+    ${(c.skins||[]).length?`<div class="note"><b>Look:</b> this card brings ${c.skins.length} skin${c.skins.length>1?'s':''} (${c.skins.map(esc).join(', ')}). A skin only changes colors, frost, corners and font.</div>`:''}
     ${c.missing.length?`<div class="note"><b>Not installed, so skipped:</b> ${c.missing.map(esc).join(', ')}</div>`:''}
     <div class="mt"><b>Permissions these widgets can ask for</b> <span style="color:var(--mut);font-size:.8125rem">(nothing is allowed automatically; you decide in Safety)</span>${pr.length?pr.map(([k,v])=>`<div class="srow"><span>${esc(k)}</span><span>${v.map(esc).join(', ')}</span></div>`).join(''):'<div class="srow"><span>None</span><span></span></div>'}${(c.hosts||[]).length?`<div style="color:var(--mut);font-size:.8125rem;margin-top:6px">Internet hosts: ${c.hosts.map(esc).join(', ')}</div>`:''}</div>`}}
 function renderSettings(){$('#autostart').setAttribute('aria-checked',!!S.autostart);$('#aver').textContent=S.version||''}
@@ -360,6 +386,38 @@ function renderLibState(){if(!S.lib)return;renderFolders();if(L.rev!==S.lib.revi
   const ps=S.profiles||[],key=JSON.stringify(ps);if(L.pk!==key){L.pk=key;$('#plist').innerHTML=ps.map(n=>`<div class="row between"><b>${esc(n)}</b><span class="row"><button class="btn g" data-pa="${esc(n)}" aria-label="Apply profile ${esc(n)}">Apply</button><button class="btn g" data-pd="${esc(n)}" aria-label="Delete profile ${esc(n)}">Delete</button></span></div>`).join('')||'<span style="color:var(--mut);font-size:.8125rem">No profiles yet.</span>';
     $$('#plist [data-pa]').forEach(b=>b.onclick=()=>send('profile_apply',{name:b.dataset.pa}));$$('#plist [data-pd]').forEach(b=>b.onclick=()=>{if(confirm('Delete profile '+b.dataset.pd+'?'))send('profile_delete',{name:b.dataset.pd})})}
   if(L.sel&&(S.libSel||[]).length!==L.nsel){L.nsel=(S.libSel||[]).length;renderDetail()}}
+let skSel=null,skTimer=null;
+const skPreview=(s)=>{const v=s.vars||{};return `background:${v['--glass']};border-radius:${v['--radius']};border:1px solid ${v['--bd']};box-shadow:${v['--shadow']}`};
+function skEditable(){const s=(S.skins||[]).find(x=>x.id===skSel);return s&&!s.builtin?s:null}
+function skRead(){const g=(i)=>$('#'+i);const hex=(c)=>c;return {id:skSel,name:g('sk-name').value||'My skin',tint:g('sk-tint-auto').checked?null:g('sk-tint').value,opacity:g('sk-opacity-auto').checked?null:+g('sk-opacity').value,frost:+g('sk-frost').value,radius:+g('sk-radius').value,border:+g('sk-border').value,shadow:+g('sk-shadow').value,accent:g('sk-accent-auto').checked?null:g('sk-accent').value,ink:g('sk-ink').value,font:g('sk-font').value}}
+function skSave(){clearTimeout(skTimer);skTimer=setTimeout(()=>{if(skEditable())send('skin_save',{skin:skRead()})},180)}
+function renderSkins(){const L=S.skins;if(!L)return;
+  if(!skSel||!L.some(x=>x.id===skSel))skSel=S.skinGlobal;
+  if(S.skinLast&&S.skinLast!==R.skLast){R.skLast=S.skinLast;if(L.some(x=>x.id===S.skinLast))skSel=S.skinLast}
+  const ae=document.activeElement,typing=ae&&ae.closest&&ae.closest('#skedit')&&ae.tagName!=='SELECT';
+  const key=JSON.stringify([L,S.skinGlobal,S.skinWidget,S.placements&&S.placements.map(p=>[p.widget,p.name]),S.fonts,skSel]);if(R.sk===key)return;R.sk=key;
+  const opts=(sel)=>L.map(s=>`<option value="${esc(s.id)}" ${s.id===sel?'selected':''}>${esc(s.name)}</option>`).join('');
+  $('#skglobal').innerHTML=opts(S.skinGlobal);const gs=L.find(x=>x.id===S.skinGlobal);$('#skwarn').hidden=!(gs&&gs.hard);
+  $('#sklist').innerHTML=L.map(s=>`<button type="button" class="wchip" role="radio" aria-checked="${s.id===skSel}" data-sk="${esc(s.id)}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;margin:0;border-radius:14px;${s.id===skSel?'outline:2px solid var(--accent)':''}"><span style="width:54px;height:30px;flex:none;${skPreview(s)}"></span><span style="text-align:left;flex:1">${esc(s.name)}${s.builtin?'':' · yours'}${s.hard?' <span class="chip warn">hard to read</span>':''}</span></button>`).join('');
+  $$('#sklist [data-sk]').forEach(b=>b.onclick=()=>{skSel=b.dataset.sk;R.sk=null;renderSkins()});
+  const cur=L.find(x=>x.id===skSel),ed=!!(cur&&!cur.builtin);
+  $('#skedtitle').textContent=cur?cur.name:'Look';$('#skedhint').textContent=ed?'Changes show on your desktop as you make them.':'Built-in skins cannot be changed. Make a copy to edit.';$('#skdel').hidden=!ed;
+  $('#skedit').style.opacity=ed?1:.55;$$('#skedit input,#skedit select').forEach(e=>e.disabled=!ed);
+  if(cur&&!typing){$('#sk-name').value=cur.name;$('#sk-tint-auto').checked=!cur.tint;$('#sk-tint').value=cur.tint||'#14161f';$('#sk-opacity-auto').checked=cur.opacity==null;$('#sk-opacity').value=cur.opacity==null?42:cur.opacity;
+    for(const k of ['frost','radius','border','shadow'])$('#sk-'+k).value=cur[k];$('#sk-font').innerHTML=(S.fonts||[]).map(f=>`<option value="${esc(f.id)}" ${f.id===cur.font?'selected':''}>${esc(f.label)}</option>`).join('');$('#sk-ink').value=cur.ink;$('#sk-accent-auto').checked=!cur.accent;$('#sk-accent').value=cur.accent||'#7cf2c8';
+    for(const k of ['opacity','frost','radius','border','shadow'])$('#sk-'+k+'-v').textContent=$('#sk-'+k).value+(k==='radius'?' px':'%')}
+  $('#skwidgets').innerHTML=(S.placements||[]).map(p=>`<div class="row between"><b>${esc(p.name)}</b><select data-sw="${esc(p.widget)}" aria-label="Skin for ${esc(p.name)}"><option value="">Follow all widgets</option>${L.map(s=>`<option value="${esc(s.id)}" ${(S.skinWidget||{})[p.widget]===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>`).join('');
+  $$('#skwidgets select').forEach(e=>e.onchange=()=>send('skin_widget',{widget:e.dataset.sw,id:e.value}))}
+$('#skglobal').onchange=(e)=>send('skin_global',{id:e.target.value});
+$('#skcopy').onclick=()=>{const cur=(S.skins||[]).find(x=>x.id===skSel);if(!cur)return;const c=Object.assign({},cur,{id:'',name:(cur.name+' copy').slice(0,40)});delete c.builtin;delete c.vars;delete c.hard;send('skin_save',{skin:c})};
+$('#skdel').onclick=()=>{const cur=skEditable();if(cur&&confirm('Delete the skin "'+cur.name+'"? Widgets that use it follow the global skin.'))send('skin_delete',{id:cur.id})};
+$$('#skedit input,#skedit select').forEach(e=>{e.addEventListener('input',()=>{for(const k of ['opacity','frost','radius','border','shadow']){const o=$('#sk-'+k+'-v');if(o)o.textContent=$('#sk-'+k).value+(k==='radius'?' px':'%')}skSave()});e.addEventListener('change',skSave)});
+function renderFx(){const f=S.fx;if(!f)return;const key=JSON.stringify([f,S.overlays]);if(R.fx===key)return;R.fx=key;
+  $('#fxid').innerHTML='<option value="">None</option>'+(S.overlays||[]).map(o=>`<option value="${esc(o.id)}" ${o.id===f.id?'selected':''}>${esc(o.name)}</option>`).join('');
+  $('#fxint').value=String(f.intensity);$('#fxspd').value=String(f.speed);if($('#fxspd').value!==String(f.speed)){const o=document.createElement('option');o.value=o.textContent=f.speed+'%';$('#fxspd').appendChild(o);$('#fxspd').value=String(f.speed)}
+  $('#fxcost').textContent=f.cost;$('#fxwhy').hidden=!f.id||!f.why;$('#fxwhy').textContent=f.why||''}
+const sendFx=()=>send('overlay_set',{id:$('#fxid').value,intensity:+$('#fxint').value,speed:+$('#fxspd').value});
+$('#fxid').onchange=$('#fxint').onchange=$('#fxspd').onchange=sendFx;
 $('#lscrim').onchange=(e)=>send('scrim',{mode:e.target.value});$('#psave').onclick=()=>{send('profile_save',{name:$('#pname').value});$('#pname').value=''};
 
 window.__drop=(on)=>document.body.classList.toggle('dropping',!!on);

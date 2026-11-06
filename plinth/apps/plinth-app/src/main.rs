@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // no console window when started from Explorer or at sign-in
+#![recursion_limit = "512"]
 
 //! Plinth app (v0.5): hub window + desktop layer with isolated widgets, permission broker, and a deny-by-default
 //! network proxy that all widget traffic is forced through.
@@ -52,6 +53,7 @@ type ThumbJob = (String, wry::RequestAsyncResponder);
 
 const HUB_HTML: &str = include_str!("hub.html");
 const LAYER_HTML: &str = include_str!("layer.html");
+const EDIT_HTML: &str = include_str!("edit.html");
 
 enum Ev {
     Hub(String),
@@ -73,6 +75,7 @@ enum Ev {
     Context(Context),
     DropHover(bool),
     Auto(u8),
+    Edit { monitor: String, msg: String },
 }
 
 struct SceneStyle {
@@ -143,6 +146,12 @@ struct App {
     suggestion: Option<Suggestion>,
     mood_current: String,
     pending_card: Option<SetupCard>,
+    /// The edit-layout overlay is open (drag widgets on the desktop).
+    editing: bool,
+    /// Skins and choices before the last setup card was applied, for Undo.
+    undo_skins: Option<(Vec<plinth_core::skin::Skin>, String, HashMap<String, String>)>,
+    /// The skin saved last (the hub selects it).
+    last_skin: String,
 }
 
 impl App {
@@ -198,16 +207,23 @@ impl App {
         let extra_layers = layer_targets(self).len().saturating_sub(1) as f32;
         cost.ram_mb += impact::EXTRA_LAYER.ram_mb * extra_layers;
         cost.cpu_pct += impact::EXTRA_LAYER.cpu_pct * extra_layers;
-        let wall_list: Vec<Value> = self.walls.lock().unwrap().list().iter().map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name, "kind": e.wallpaper.kind.as_str(), "bundled": e.bundled, "author": e.wallpaper.author })).collect();
+        let overlay_list: Vec<Value> = self.walls.lock().unwrap().list().iter().filter(|e| e.wallpaper.kind == plinth_core::WallpaperKind::Overlay).map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name })).collect();
+        let wall_list: Vec<Value> = self.walls.lock().unwrap().list().iter().filter(|e| e.wallpaper.kind != plinth_core::WallpaperKind::Overlay).map(|e| json!({ "id": e.wallpaper.id, "name": e.wallpaper.name, "kind": e.wallpaper.kind.as_str(), "bundled": e.bundled, "author": e.wallpaper.author })).collect();
         let wcost = match self.walls.lock().unwrap().get(&self.st.wallpaper).map(|e| impact::wallpaper_extra(e.wallpaper.kind)) {
             Some(c) => format!("adds ≈{} MB and ≈{:.1}% of one core while visible · pauses in games, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct),
             None => "no extra cost".to_string(),
         };
+        let fx_state = self.fx_status();
+        if let Some(true) = fx_state.get("drawn").and_then(Value::as_bool) {
+            let c = self.st.fx.cost();
+            cost.ram_mb += c.ram_mb;
+            cost.cpu_pct += c.cpu_pct;
+        }
         let mons_json: Vec<Value> = self
             .monitors
             .iter()
             .enumerate()
-            .map(|(i, m)| json!({ "id": m.id, "n": i + 1, "name": m.name, "x": m.x, "y": m.y, "w": m.width_px, "h": m.height_px, "dpi": m.dpi, "scale": m.scale_percent(), "primary": m.primary, "hz": m.refresh_hz, "portrait": m.portrait(), "wallpaper": self.wallpaper_for(m), "layer": layer_targets(self).iter().any(|t| t.id == m.id) }))
+            .map(|(i, m)| json!({ "id": m.id, "n": i + 1, "wd": m.size_dip().0, "hd": m.size_dip().1, "name": m.name, "x": m.x, "y": m.y, "w": m.width_px, "h": m.height_px, "dpi": m.dpi, "scale": m.scale_percent(), "primary": m.primary, "hz": m.refresh_hz, "portrait": m.portrait(), "wallpaper": self.wallpaper_for(m), "layer": layer_targets(self).iter().any(|t| t.id == m.id) }))
             .collect();
         let place_json: Vec<Value> = self
             .st
@@ -217,7 +233,7 @@ impl App {
                 let r = self.resolved.iter().find(|r| r.widget == p.widget);
                 let nm = { let b = p.widget.split('#').next().unwrap_or(""); let n = names.get(b).cloned().unwrap_or_default(); match p.widget.split_once('#') { Some((_, c)) => format!("{n} (copy {c})"), None => n } };
                 let home_ok = p.home == mons::ROLE_PRIMARY || self.monitors.iter().any(|m| m.id == p.home || (!p.home_fingerprint.is_empty() && m.fingerprint == p.home_fingerprint));
-                json!({ "widget": p.widget, "base": p.widget.split('#').next().unwrap_or(""), "copy": p.widget.split_once('#').and_then(|(_, n)| n.parse::<u32>().ok()).unwrap_or(1), "name": nm, "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
+                json!({ "widget": p.widget, "base": p.widget.split('#').next().unwrap_or(""), "copy": p.widget.split_once('#').and_then(|(_, n)| n.parse::<u32>().ok()).unwrap_or(1), "name": nm, "home": p.home, "homeConnected": home_ok, "monitor": r.map(|r| r.monitor.clone()), "rect": r.map(|r| json!([r.x, r.y, r.w, r.h])), "locked": self.locked_reason(&p.widget), "parked": r.map_or(false, |r| r.parked), "clipped": r.map_or(false, |r| r.clipped), "anchor": p.anchor.as_str() })
             })
             .collect();
         let (lib_summary, lib_names): (Value, HashMap<String, String>) = {
@@ -246,11 +262,147 @@ impl App {
                     }
                 }
             }
-            json!({ "name": c.name, "author": c.author, "scene": c.scene, "widgets": c.widgets.len(), "monitors": c.widgets.iter().map(|p| p.monitor).max().map_or(1, |m| m as usize + 1), "missing": missing, "permissions": perms, "hosts": hosts, "haveMonitors": self.monitors.len() })
+            json!({ "name": c.name, "author": c.author, "scene": c.scene, "widgets": c.widgets.len(), "monitors": c.widgets.iter().map(|p| p.monitor).max().map_or(1, |m| m as usize + 1), "missing": missing, "permissions": perms, "hosts": hosts, "haveMonitors": self.monitors.len(), "skins": c.skins.iter().map(|s| s.name.clone()).collect::<Vec<_>>(), "skin": c.skin })
         });
-        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
+        json!({ "autostart": win::autostart_enabled(), "version": env!("CARGO_PKG_VERSION"), "card": card_json, "moods": moods, "lib": lib_summary, "libSel": lib_sel, "slides": slides, "scrim": self.st.scrim, "skins": self.skins_json(), "skinGlobal": self.st.skin_global, "skinWidget": self.st.skin_widget, "skinLast": self.last_skin, "fonts": plinth_core::skin::FONTS.iter().map(|f| json!({ "id": f.as_str(), "label": f.label() })).collect::<Vec<_>>(), "overlays": overlay_list, "fx": fx_state, "profiles": self.st.profiles.keys().collect::<Vec<_>>(), "restorable": self.st.os_snapshot.is_some(), "monitors": mons_json, "placements": place_json, "snap": { "mode": self.st.snap.mode.as_str(), "grid": self.st.snap.grid }, "editing": self.editing, "fallback": self.st.fallback, "parkAll": self.park_all, "canUndo": self.undo_placements.is_some(), "fakeMonitors": self.fake.lock().unwrap().is_some(), "wallpaperCost": wcost, "wallpapers": wall_list, "wallpaper": self.st.wallpaper, "scene": self.st.scene, "applied": self.st.applied, "safe": self.st.safe, "firstRun": self.st.first_run, "motion": self.st.motion, "paused": self.paused, "widgets": widgets, "activity": activity,
             "destinations": dests, "proxy": proxy, "impact": { "ram": cost.ram_mb.round(), "cpu": format!("{:.1}", cost.cpu_pct), "hubRam": impact::HUB_OPEN_RAM_MB, "motionCpu": impact::MOTION_EXTRA_CPU_PCT }, "msg": msg })
         .to_string()
+    }
+
+    /// Overlay status for the hub: what is chosen, whether it is drawn, why not, and its cost.
+    fn fx_status(&self) -> Value {
+        let (kind, wall_kind) = {
+            let w = self.walls.lock().unwrap();
+            (w.get(&self.st.fx.id).map(|e| e.wallpaper.kind), w.get(&self.st.wallpaper).map(|e| e.wallpaper.kind))
+        };
+        let plan = plinth_core::motion::plan(&self.st.fx, kind, wall_kind, self.st.applied && !self.st.safe, false);
+        let c = self.st.fx.cost();
+        let why = match plan {
+            Some(plinth_core::motion::Plan::Skip(plinth_core::motion::Hidden::LiveWallpaperActive)) => "A live wallpaper is selected, and only one motion item runs by default. Choose a still picture or the Scene background to see the overlay.",
+            Some(plinth_core::motion::Plan::Skip(plinth_core::motion::Hidden::Unavailable)) => "That overlay is not available.",
+            Some(plinth_core::motion::Plan::Skip(plinth_core::motion::Hidden::NotShown)) => "It will appear when the scene is applied and Safe mode is off.",
+            _ => "",
+        };
+        json!({ "id": self.st.fx.id, "intensity": self.st.fx.intensity, "speed": self.st.fx.speed, "drawn": plan == Some(plinth_core::motion::Plan::Draw), "why": why,
+            "cost": if self.st.fx.is_on() { format!("adds about {} MB and about {:.1}% of one core while visible; paused in games, on low battery and in remote sessions, near 0 CPU when covered", c.ram_mb.round(), c.cpu_pct) } else { "no extra cost".to_string() } })
+    }
+
+    /// The overlay iframe for a monitor (the primary only: one motion item by default), or empty.
+    fn overlay_html(&self, m: &MonitorInfo, wp_html: &str) -> String {
+        if !m.primary || !wp_html.is_empty() || self.st.safe {
+            return String::new();
+        }
+        let w = self.walls.lock().unwrap();
+        let Some(e) = w.get_overlay(&self.st.fx.id) else { return String::new() };
+        // The id and entry were validated by plinth-core; the query is two numbers.
+        format!(r#"<iframe id="wo" class="wp ov" sandbox="allow-scripts" src="{}?{}" title="motion overlay" tabindex="-1"></iframe>"#, WallpaperStore::entry_url(&e.wallpaper), self.st.fx.query())
+    }
+
+    fn all_skins(&self) -> Vec<plinth_core::skin::Skin> {
+        let mut v = plinth_core::skin::Skin::builtins();
+        v.extend(self.st.skins.iter().cloned());
+        v
+    }
+
+    /// The skin a widget wears (its own, else the global one) as the data the layer page applies.
+    fn skin_json(&self, widget: &str) -> Value {
+        use plinth_core::skin::{resolve, Font};
+        let all = self.all_skins();
+        let sk = resolve(&all, &self.st.skin_global, self.st.skin_widget.get(widget).map(String::as_str));
+        let sc = scene(&self.st.scene);
+        let vars: serde_json::Map<String, Value> = sk.vars(scene_glass(sc.id)).into_iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
+        let accent = sk.accent.map(|c| format!("{:02x}{:02x}{:02x}", c.0, c.1, c.2)).unwrap_or_else(|| sc.accent.to_string());
+        json!({ "id": sk.id, "vars": vars, "font": if sk.font == Font::Default { "" } else { sk.font.stack() }, "ink": sk.effective_ink(sc.ink), "accent": accent })
+    }
+
+    /// Skins for the hub: every skin with its values, a preview and whether text would be hard to read on it.
+    fn skins_json(&self) -> Value {
+        let sc = scene(&self.st.scene);
+        let builtin: Vec<String> = plinth_core::skin::Skin::builtins().into_iter().map(|s| s.id).collect();
+        Value::Array(
+            self.all_skins()
+                .iter()
+                .map(|s| {
+                    let mut v = s.to_value();
+                    v["builtin"] = json!(builtin.contains(&s.id));
+                    v["vars"] = json!(s.vars(scene_glass(sc.id)).into_iter().map(|(k, x)| (k.to_string(), x)).collect::<std::collections::BTreeMap<_, _>>());
+                    v["hard"] = json!(s.hard_to_read(scene_glass(sc.id), sc.ink));
+                    v
+                })
+                .collect(),
+        )
+    }
+
+    fn widget_name(&self, widget: &str) -> String {
+        let base = widget.split('#').next().unwrap_or(widget);
+        let n = self.host.lock().unwrap().describe().into_iter().find(|w| w.id == base).map(|w| w.name).unwrap_or_default();
+        match widget.split_once('#') {
+            Some((_, c)) => format!("{n} (copy {c})"),
+            None => n,
+        }
+    }
+
+    /// Why a widget cannot be dragged right now (None = it can). Parked and temporarily moved widgets are never written back (D26).
+    fn locked_reason(&self, widget: &str) -> Option<&'static str> {
+        if self.park_all {
+            return Some("moved temporarily");
+        }
+        match self.resolved.iter().find(|r| r.widget == widget) {
+            None => Some("not shown"),
+            Some(r) if r.parked => Some("its monitor is unplugged"),
+            _ => None,
+        }
+    }
+
+    /// Where a widget would land if dropped with its top-left at (x, y) DIP on monitor `from_id`: the target monitor, the snapped
+    /// rectangle and the scale it is shown at there. Pure reads.
+    fn snap_for(&self, widget: &str, from_id: &str, x: f32, y: f32) -> Option<(MonitorInfo, plinth_core::placement::Snapped, f32)> {
+        use plinth_core::placement::{retarget, scale_on, snap, Rect};
+        let old = self.st.placements.iter().find(|p| p.widget == widget)?;
+        let from = self.monitors.iter().find(|m| m.id == from_id)?;
+        let r = self.resolved.iter().find(|r| r.widget == widget)?;
+        let (t, rt) = retarget(&self.monitors, from, Rect::new(x, y, r.w, r.h))?;
+        let sc = scale_on(old, t);
+        let (wx, wy, ww, wh) = t.work_dip();
+        let others: Vec<Rect> = self.resolved.iter().filter(|o| o.monitor == t.id && o.widget != widget).map(|o| Rect::new(o.x, o.y, o.w, o.h)).collect();
+        let s = snap(Rect::new(rt.x, rt.y, old.w * sc, old.h * sc), Rect::new(wx, wy, ww, wh), &others, self.st.snap);
+        Some((t.clone(), s, sc))
+    }
+
+    /// Save a drop: the only place a dragged position becomes saved state. Returns a message for the hub.
+    fn commit_place(&mut self, widget: &str, from_id: &str, x: f32, y: f32) -> Result<String, String> {
+        if !(x.is_finite() && y.is_finite()) {
+            return Err("That position is not valid.".into());
+        }
+        if let Some(why) = self.locked_reason(widget) {
+            return Err(format!("This widget cannot be moved now ({why}). Your saved layout is untouched."));
+        }
+        let (t, s, sc) = self.snap_for(widget, from_id, x, y).ok_or("That widget or monitor is not available.")?;
+        let old = self.st.placements.iter().find(|p| p.widget == widget).cloned().ok_or("That widget is not available.")?;
+        let np = plinth_core::placement::placed(&old, &t, s.rect, sc);
+        if np == old {
+            return Ok("It was already there.".into());
+        }
+        let moved_monitor = np.home != old.home;
+        if let Some(p) = self.st.placements.iter_mut().find(|p| p.widget == widget) {
+            *p = np;
+        }
+        Ok(if moved_monitor { format!("Moved to {}.", t.name) } else { "Moved.".into() })
+    }
+
+    /// What the edit overlay of one monitor shows.
+    fn edit_data(&self, m: &MonitorInfo, main: bool) -> Value {
+        let (wx, wy, ww, _) = m.work_dip();
+        let widgets: Vec<Value> = self
+            .resolved
+            .iter()
+            .filter(|r| r.monitor == m.id)
+            .map(|r| {
+                let why = self.locked_reason(&r.widget);
+                json!({ "id": r.widget, "name": self.widget_name(&r.widget), "x": r.x, "y": r.y, "w": r.w, "h": r.h, "locked": why.is_some(), "why": why.unwrap_or("") })
+            })
+            .collect();
+        json!({ "main": main, "monitor": m.id, "snap": { "mode": self.st.snap.mode.as_str(), "grid": self.st.snap.grid }, "widgets": widgets, "barLeft": wx + ww / 2.0 - 270.0, "barTop": wy + 12.0 })
     }
 
     fn primary_id(&self) -> Option<String> {
@@ -292,26 +444,37 @@ impl App {
         let url = WallpaperStore::entry_url(&e.wallpaper);
         match e.wallpaper.kind {
             plinth_core::WallpaperKind::Video => format!(r#"<video id="wv" class="wp" src="{url}" muted loop autoplay playsinline disablepictureinpicture style="object-fit:{}"></video>"#, e.wallpaper.fit.css()),
+            plinth_core::WallpaperKind::Overlay => String::new(), // an overlay is never THE wallpaper
             plinth_core::WallpaperKind::Web => format!(r#"<iframe id="wf" class="wp" sandbox="allow-scripts" src="{url}" title="wallpaper"></iframe>"#),
         }
     }
 
     fn layer_html(&self, m: &MonitorInfo) -> String {
+        self.layer_html_inner(m, false)
+    }
+
+    /// The widgets of one layer with their places. Moving a widget changes only this list, so the layer applies it live (`__layout`)
+    /// instead of reloading the page; `zero_pos` gives the page without places, to tell a real change from a move.
+    fn layer_widgets(&self, m: &MonitorInfo, zero_pos: bool) -> Vec<Value> {
+        if self.st.safe {
+            return vec![];
+        }
+        let info = self.host.lock().unwrap().describe();
+        self.resolved
+            .iter()
+            .filter(|r| r.monitor == m.id)
+            .filter_map(|r| {
+                let base = r.widget.split('#').next().unwrap_or(&r.widget);
+                let w = info.iter().find(|w| w.id == base)?;
+                let k = |v: f32| if zero_pos { 0.0 } else { v.round() };
+                Some(json!({ "id": r.widget, "base": base, "slot": w.slot, "trusted": w.trusted, "x": k(r.x), "y": k(r.y), "w": k(r.w), "h": k(r.h), "skin": if zero_pos { Value::Null } else { self.skin_json(&r.widget) } }))
+            })
+            .collect()
+    }
+
+    fn layer_html_inner(&self, m: &MonitorInfo, zero_pos: bool) -> String {
         let s = scene(&self.st.scene);
-        let widgets: Vec<Value> = if self.st.safe {
-            vec![]
-        } else {
-            let info = self.host.lock().unwrap().describe();
-            self.resolved
-                .iter()
-                .filter(|r| r.monitor == m.id)
-                .filter_map(|r| {
-                    let base = r.widget.split('#').next().unwrap_or(&r.widget);
-                    let w = info.iter().find(|w| w.id == base)?;
-                    Some(json!({ "id": r.widget, "base": base, "slot": w.slot, "trusted": w.trusted, "x": r.x.round(), "y": r.y.round(), "w": r.w.round(), "h": r.h.round() }))
-                })
-                .collect()
-        };
+        let widgets = self.layer_widgets(m, zero_pos);
         let banner = if self.st.safe { r#"<div style="position:fixed;left:50%;top:6%;transform:translateX(-50%);padding:10px 18px;border-radius:14px;background:rgba(0,0,0,.55);border:1px solid #ffb454;color:#ffb454;font:600 14px system-ui">Safe mode: widgets are paused</div>"# } else { "" };
         let beacon = if self.beacon && m.primary { r#"<div style="position:fixed;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;background:#ff00ff"></div>"# } else { "" };
         let wp_html = self.wallpaper_html(&self.wallpaper_for(m));
@@ -329,13 +492,14 @@ impl App {
         // Cost experiments (and the basis of the Performance mode setting): PLINTH_NO_ANIM drops the wallpaper drift,
         // PLINTH_NO_BLUR replaces the glass blur with a flat translucent panel.
         if std::env::var_os("PLINTH_NO_BLUR").is_some() {
-            html = html.replace("backdrop-filter:blur(22px) saturate(1.35);", "");
+            html = html.replace("backdrop-filter:blur(var(--blur,22px)) saturate(1.35);", "");
         }
         html
             .replace("__DRIFT__", if stat.is_some() { "inset:0" } else if self.st.motion && wp_html.is_empty() && std::env::var_os("PLINTH_NO_ANIM").is_none() { "animation:drift 40s ease-in-out infinite alternate" } else { "" })
             .replace("__WALL__", &wall_css)
             .replace("__SCRIM__", scrim_css)
             .replace("__WALLPAPER__", &wp_html)
+            .replace("__OVERLAY__", &self.overlay_html(m, &wp_html))
             .replace("__MID__", if wp_html.is_empty() && stat.is_none() { s.mid } else { "transparent" })
             .replace("__GLASS__", s.glass)
             .replace("__INK__", s.ink)
@@ -350,7 +514,10 @@ struct Layer {
     _window: Window,
     webview: WebView,
     rect: (i32, i32, u32, u32),
+    /// Hash of the page without widget places; a change reloads the page.
     html_hash: u64,
+    /// Hash of the widget places; a change only moves the widgets.
+    pos_hash: u64,
 }
 
 fn hash_str(s: &str) -> u64 {
@@ -379,13 +546,19 @@ fn sync_layers(target: &EventLoopWindowTarget<Ev>, app: &App, layers: &mut HashM
     layers.retain(|id, _| want.iter().any(|m| &m.id == id));
     for m in want {
         let html = app.layer_html(&m);
-        let hh = hash_str(&html);
+        let hh = hash_str(&app.layer_html_inner(&m, true));
+        let layout = Value::Array(app.layer_widgets(&m, false)).to_string();
+        let ph = hash_str(&layout);
         let rect = (m.x, m.y, m.width_px, m.height_px);
         match layers.get_mut(&m.id) {
             Some(l) if l.rect == rect => {
                 if l.html_hash != hh {
                     let _ = l.webview.load_html(&html);
                     l.html_hash = hh;
+                    l.pos_hash = ph;
+                } else if l.pos_hash != ph {
+                    let _ = l.webview.evaluate_script(&format!("__layout({layout})"));
+                    l.pos_hash = ph;
                 }
                 continue;
             }
@@ -394,8 +567,81 @@ fn sync_layers(target: &EventLoopWindowTarget<Ev>, app: &App, layers: &mut HashM
             }
             None => {}
         }
-        if let Some(l) = create_layer(target, app, &m, &html, ctx, proxy) {
+        if let Some(mut l) = create_layer(target, app, &m, &html, ctx, proxy) {
+            l.html_hash = hh;
+            l.pos_hash = ph;
             layers.insert(m.id.clone(), l);
+        }
+    }
+}
+
+/// One edit-layout overlay: a translucent top-level window shaped to the widgets of one monitor (D35).
+struct Overlay {
+    window: Window,
+    view: WebView,
+    monitor: String,
+}
+
+/// JSON for a script: `<` is written as the escape for U+003C so the text can never close the page's script element.
+fn js_safe(v: &Value) -> String {
+    v.to_string().replace('<', &format!("{}u003c", char::from(92u8)))
+}
+
+/// Window region of an overlay in window pixels: one rectangle per widget, plus the toolbar on the main overlay.
+fn overlay_region(data: &Value, scale: f32) -> Vec<(i32, i32, i32, i32)> {
+    let f = |v: &Value| v.as_f64().unwrap_or(0.0) as f32;
+    let px = |v: f32| (v * scale).round() as i32;
+    let mut r: Vec<(i32, i32, i32, i32)> = data["widgets"]
+        .as_array()
+        .map(|a| a.iter().map(|w| (px(f(&w["x"])), px(f(&w["y"])), px(f(&w["x"]) + f(&w["w"])), px(f(&w["y"]) + f(&w["h"])))).collect())
+        .unwrap_or_default();
+    if data["main"].as_bool().unwrap_or(false) {
+        let (l, t) = (f(&data["barLeft"]), f(&data["barTop"]));
+        r.push((px(l), px(t), px(l + 540.0), px(t + 56.0)));
+    }
+    if r.is_empty() {
+        r.push((0, 0, 1, 1)); // nothing to show: a one-pixel window part, never the whole screen
+    }
+    r
+}
+
+fn open_overlay(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, main: bool, proxy: &EventLoopProxy<Ev>) -> Option<Overlay> {
+    use tao::platform::windows::WindowBuilderExtWindows as _;
+    let window = WindowBuilder::new()
+        .with_title("Plinth edit layout")
+        .with_decorations(false)
+        .with_undecorated_shadow(false)
+        .with_always_on_top(true)
+        .with_resizable(false)
+        .with_skip_taskbar(true)
+        .with_inner_size(tao::dpi::PhysicalSize::new(m.width_px, m.height_px))
+        .with_position(tao::dpi::PhysicalPosition::new(m.x, m.y))
+        .build(target)
+        .ok()?;
+    let data = app.edit_data(m, main);
+    let html = EDIT_HTML.replace("__DATA__", &js_safe(&data)).replace("__BARTOP__", &format!("{}", data["barTop"].as_f64().unwrap_or(12.0)));
+    let (p, mid) = (proxy.clone(), m.id.clone());
+    let view = WebViewBuilder::new()
+        .with_html(html)
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            let _ = p.send_event(Ev::Edit { monitor: mid.clone(), msg: req.body().clone() });
+        })
+        .build(&window)
+        .ok()?;
+    win::make_translucent(window.hwnd() as isize, 120);
+    win::set_region(window.hwnd() as isize, &overlay_region(&data, m.scale()));
+    window.set_focus();
+    Some(Overlay { window, view, monitor: m.id.clone() })
+}
+
+/// Send the current layout to every overlay and reshape its window to the widgets.
+fn refresh_overlays(app: &App, overlays: &[Overlay]) {
+    for o in overlays {
+        if let Some(m) = app.monitors.iter().find(|m| m.id == o.monitor) {
+            let main = app.monitors.iter().position(|x| x.id == m.id) == Some(0) || m.primary;
+            let data = app.edit_data(m, main);
+            let _ = o.view.evaluate_script(&format!("__layout({})", js_safe(&data)));
+            win::set_region(o.window.hwnd() as isize, &overlay_region(&data, m.scale()));
         }
     }
 }
@@ -506,7 +752,7 @@ fn create_layer(target: &EventLoopWindowTarget<Ev>, app: &App, m: &MonitorInfo, 
     use wry::WebViewBuilderExtWindows;
     b = b.with_additional_browser_args(format!("--proxy-server=http://127.0.0.1:{} --proxy-bypass-list=<-loopback>", app.proxy_port));
     let webview = b.build(&window).ok()?;
-    Some(Layer { _window: window, webview, rect: (m.x, m.y, m.width_px, m.height_px), html_hash: hash_str(html) })
+    Some(Layer { _window: window, webview, rect: (m.x, m.y, m.width_px, m.height_px), html_hash: 0, pos_hash: 0 })
 }
 
 fn wallpaper_images_dir() -> PathBuf {
@@ -638,6 +884,38 @@ fn gc_composed(app: &App) {
 }
 
 /// Read and show a setup card. Cards never contain code or grant anything; they name widgets and places.
+/// The Scene's glass color and alpha, which a skin uses where it leaves the choice to the Scene.
+fn scene_glass(id: &str) -> ((u8, u8, u8), f32) {
+    match id {
+        "dusk" => ((30, 20, 50), 0.38),
+        "paper" => ((255, 255, 255), 0.45),
+        _ => ((20, 22, 32), 0.42),
+    }
+}
+
+/// Bring a card's custom skins into the user's list. A skin whose id is already taken by a DIFFERENT skin gets a new id, so a card can
+/// never overwrite a skin the user made. Returns card skin id (or built-in id) -> id to use here.
+fn import_card_skins(st: &mut State, card: &SetupCard) -> HashMap<String, String> {
+    use plinth_core::skin::{Skin, MAX_SKINS};
+    let mut map: HashMap<String, String> = Skin::builtins().into_iter().map(|s| (s.id.clone(), s.id)).collect();
+    for s in &card.skins {
+        if let Some(same) = st.skins.iter().find(|x| x.id == s.id && x.to_value() == s.to_value()) {
+            map.insert(s.id.clone(), same.id.clone());
+            continue;
+        }
+        if st.skins.len() >= MAX_SKINS {
+            continue; // no room: widgets that wanted it keep what they had
+        }
+        let mut n = s.clone();
+        if st.skins.iter().any(|x| x.id == n.id) {
+            n.id = (2..100).map(|i| format!("{}-{i}", s.id.chars().take(36).collect::<String>())).find(|c| !st.skins.iter().any(|x| &x.id == c)).unwrap_or_else(|| s.id.clone());
+        }
+        map.insert(s.id.clone(), n.id.clone());
+        st.skins.push(n);
+    }
+    map
+}
+
 fn load_card(app: &mut App, path: &str) -> String {
     let p = std::path::Path::new(path);
     if !p.extension().map_or(false, |e| e.eq_ignore_ascii_case("plinthcard") || e.eq_ignore_ascii_case("json")) {
@@ -786,7 +1064,7 @@ fn main() {
     st.first_run = st.first_run && autotest.is_none();
     let walls = Arc::new(Mutex::new(WallpaperStore::new(wallpapers_dir(), user_wallpapers_dir())));
     println!("wallpapers: {} found", walls.lock().unwrap().list().len());
-    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new(), engine: Engine::new(Vec::new(), 120), learner: Learner::new(3), last_ctx: Context::default(), suggestion: None, mood_current: String::new(), pending_card: None };
+    let mut app = App { host: host.clone(), st, policy, plog, proxy_port, beacon: autotest.is_some(), paused: false, walls, wall_log: Arc::new(Mutex::new(Vec::new())), monitors: Vec::new(), resolved: Vec::new(), park_all: false, fake: Arc::new(Mutex::new(std::env::var("PLINTH_FAKE_MONITORS").ok().filter(|v| !v.trim().is_empty()))), layout_log: Vec::new(), undo_placements: None, lib: Arc::new(Mutex::new(Library::load(std::env::temp_dir().join("plinth-placeholder-lib.json"), std::env::temp_dir().join("plinth-placeholder-thumbs"), std::env::temp_dir().join("plinth-placeholder-composed"), None))), composed: HashMap::new(), slide_due: HashMap::new(), engine: Engine::new(Vec::new(), 120), learner: Learner::new(3), last_ctx: Context::default(), suggestion: None, mood_current: String::new(), pending_card: None, editing: false, undo_skins: None, last_skin: String::new() };
     app.monitors = current_monitors(&app.fake);
     println!("monitors: {}", app.monitors.iter().map(|m| format!("{} {}x{} at {},{} {}%{}", m.name, m.width_px, m.height_px, m.x, m.y, m.scale_percent(), if m.primary { " primary" } else { "" })).collect::<Vec<_>>().join(" | "));
     app.recompute();
@@ -848,6 +1126,7 @@ fn main() {
     let mut layer_ctx = WebContext::new(Some(state::webview_dir().join("wv-layer")));
     let mut layers: HashMap<String, Layer> = HashMap::new();
     let mut identify: Vec<(Window, WebView)> = Vec::new();
+    let mut overlays: Vec<Overlay> = Vec::new();
 
     {
         // Hub revival: if the hub was hidden (its web view released) and something makes the window visible again, such as a
@@ -990,6 +1269,101 @@ fn main() {
                 let _ = p.send_event(Ev::Hub(j.to_string()));
             };
             let nap = |s: u64| std::thread::sleep(Duration::from_secs(s));
+            if std::env::var_os("PLINTH_AUTOTEST_SKIN").is_some() {
+                // Skins (D37): create, apply globally and per widget, refuse bad skins, export in a card, refuse hostile cards,
+                // import without overwriting, undo, delete.
+                let cards = std::env::var("PLINTH_CARDS").unwrap_or_default();
+                let card = |name: &str, skin_def: &str, skin_ref: &str| {
+                    let f = std::path::Path::new(&cards).join(format!("{name}.plinthcard"));
+                    let _ = std::fs::create_dir_all(&cards);
+                    let body = format!(r##"{{"format":1,"id":"test.{name}","name":"{name}","author":"Test","scene":"dusk","skin":"{skin_ref}","skins":[{skin_def}],"widgets":[{{"widget":"com.plinth.clock","version":"1.0.0","rect":[70,120,300,160],"skin":"{skin_ref}"}}]}}"##);
+                    let _ = std::fs::write(&f, body);
+                    f.to_string_lossy().to_string()
+                };
+                nap(2);
+                hub(&p, r#"{"cmd":"apply"}"#);
+                nap(4);
+                hub(&p, r##"{"cmd":"skin_save","skin":{"id":"","name":"Test glow","tint":"#102030","opacity":70,"frost":80,"radius":30,"border":50,"shadow":40,"accent":"#ff8800","ink":"light","font":"mono"}}"##);
+                nap(1);
+                let _ = p.send_event(Ev::Auto(80));
+                hub(&p, r#"{"cmd":"skin_global","id":"my-skin-1"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(81));
+                hub(&p, r#"{"cmd":"skin_widget","widget":"com.plinth.clock","id":"terminal"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(82));
+                for bad in [
+                    r##"{"cmd":"skin_save","skin":{"id":"","name":"Big","radius":3000}}"##,
+                    r##"{"cmd":"skin_save","skin":{"id":"","name":"Font","font":"Comic Sans MS"}}"##,
+                    r##"{"cmd":"skin_save","skin":{"id":"","name":"Css","tint":"red; background:url(http://evil.example/x)"}}"##,
+                    r##"{"cmd":"skin_save","skin":{"id":"frosted","name":"Overwrite a built-in"}}"##,
+                    r##"{"cmd":"skin_save","skin":{"id":"../../x","name":"Path"}}"##,
+                    r##"{"cmd":"skin_global","id":"no-such-skin"}"##,
+                ] {
+                    hub(&p, bad);
+                }
+                nap(2);
+                let _ = p.send_event(Ev::Auto(83));
+                hub(&p, r#"{"cmd":"card_export","name":"Skin Test"}"#);
+                nap(2);
+                let _ = p.send_event(Ev::Auto(84));
+                let hostile = card("hostile", r##"{"id":"evil-skin","name":"Evil","tint":"#000000;} body{background:url(http://evil.example/x)","font":"url(x.woff2)"}"##, "evil-skin");
+                hub(&p, &json!({ "cmd": "card_load", "path": hostile }).to_string());
+                nap(1);
+                let _ = p.send_event(Ev::Auto(85));
+                let collide = card("collide", r##"{"id":"my-skin-1","name":"Same id, different look","tint":"#ffffff","opacity":90,"radius":5,"ink":"dark"}"##, "my-skin-1");
+                hub(&p, &json!({ "cmd": "card_load", "path": collide }).to_string());
+                nap(1);
+                hub(&p, r#"{"cmd":"card_apply"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(86));
+                hub(&p, r#"{"cmd":"undo_positions"}"#);
+                nap(2);
+                let _ = p.send_event(Ev::Auto(87));
+                hub(&p, r#"{"cmd":"skin_delete","id":"my-skin-1"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(88));
+                nap(2);
+                let _ = p.send_event(Ev::Auto(89));
+                return;
+            }
+            if std::env::var_os("PLINTH_AUTOTEST_FX").is_some() {
+                // Motion overlay (D36): choose, refuse bad input, yield to a live wallpaper, pause with the governor, change amount, safe mode.
+                nap(2);
+                hub(&p, r#"{"cmd":"apply"}"#);
+                nap(4);
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-rain","intensity":2,"speed":100}"#);
+                nap(4);
+                let _ = p.send_event(Ev::Auto(70));
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-nope","intensity":2,"speed":100}"#); // valid id, no such package: refused
+                hub(&p, r#"{"cmd":"overlay_set","id":"../../x","intensity":2,"speed":100}"#); // not an id at all: treated as none
+                nap(1);
+                let _ = p.send_event(Ev::Auto(71));
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-rain","intensity":2,"speed":100}"#);
+                hub(&p, r#"{"cmd":"wallpaper","id":"com.plinth.aurora"}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(72));
+                hub(&p, r#"{"cmd":"wallpaper","id":""}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(73));
+                let _ = p.send_event(Ev::Pause(true));
+                nap(2);
+                let _ = p.send_event(Ev::Auto(74));
+                let _ = p.send_event(Ev::Pause(false));
+                nap(3);
+                let _ = p.send_event(Ev::Auto(75));
+                hub(&p, r#"{"cmd":"overlay_set","id":"com.plinth.fx-rain","intensity":3,"speed":150}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(76));
+                hub(&p, r#"{"cmd":"wallpaper","id":"com.plinth.fx-rain"}"#); // an overlay is never THE wallpaper
+                nap(1);
+                let _ = p.send_event(Ev::Auto(77));
+                hub(&p, r#"{"cmd":"safe","on":true}"#);
+                nap(3);
+                let _ = p.send_event(Ev::Auto(78));
+                let _ = p.send_event(Ev::Auto(79));
+                return;
+            }
             if std::env::var_os("PLINTH_AUTOTEST_MOODS").is_some() {
                 let cards = std::env::var("PLINTH_CARDS").unwrap_or_default();
                 let ctx = |app: &str, fs: bool, now: u64| Context { foreground_app: app.into(), fullscreen: fs, on_battery: false, minute_of_day: 600, now_secs: now };
@@ -1106,6 +1480,15 @@ fn main() {
                 hub(&p, r#"{"cmd":"widget_add","widget":"com.plinth.clock","monitor":"FAKE#C"}"#);
                 nap(3);
                 let _ = p.send_event(Ev::Auto(29)); // H: a second clock on monitor C, the first still on B
+                // I: drop placement from the hub diagram: exact place on monitor B, and a refused drop while widgets are parked temporarily
+                hub(&p, r#"{"cmd":"place","widget":"com.plinth.clock","monitor":"FAKE#B","x":300,"y":200}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"park_all","on":true}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"place","widget":"com.plinth.clock","monitor":"FAKE#B","x":800,"y":600}"#);
+                nap(2);
+                hub(&p, r#"{"cmd":"park_all","on":false}"#);
+                nap(2);
                 let _ = p.send_event(Ev::Auto(26));
                 return;
             }
@@ -1151,10 +1534,16 @@ fn main() {
     }
     let _ = &sec_last;
     let mut mon_snaps: Vec<MonSnap> = Vec::new();
+    let mut fx_snaps: Vec<(String, Value)> = Vec::new();
+    let mut skin_snaps: Vec<(String, Value)> = Vec::new();
+    let fx_js: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
     let mut lp = LibProbe::default();
     let mut mood_snaps: Vec<(String, String, bool, usize, bool, bool)> = Vec::new();
     let mut fs_test: Option<Window> = None;
     let sampler = sampler;
+    if std::env::var_os("PLINTH_AUTOEDIT").is_some() {
+        app.st.applied = true;
+    }
     let mut applied_before_start = app.st.applied;
 
     event_loop.run(move |event, target, control_flow| {
@@ -1163,6 +1552,30 @@ fn main() {
             applied_before_start = false;
             sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
             println!("restored applied scene {} (layers created: {})", app.st.scene, layers.len());
+            if std::env::var_os("PLINTH_AUTOEDIT").is_some() {
+                // Drag test (scripts/dragtest.ps1): open the edit overlays and print where every widget is on the real screen.
+                for (i, m) in layer_targets(&app).iter().enumerate() {
+                    if let Some(o) = open_overlay(target, &app, m, i == 0, &proxy) {
+                        overlays.push(o);
+                    }
+                }
+                app.editing = !overlays.is_empty();
+                for r in &app.resolved {
+                    if let Some(m) = app.monitors.iter().find(|m| m.id == r.monitor) {
+                        let s = m.scale();
+                        println!("autoedit: widget {} monitor {} screen {} {} {} {}", r.widget, m.name, m.x + (r.x * s) as i32, m.y + (r.y * s) as i32, (r.w * s) as i32, (r.h * s) as i32);
+                    }
+                }
+                for m in &app.monitors {
+                    println!("autoedit: monitor {} id {} screen {} {} {} {} primary {}", m.name, m.id, m.x, m.y, m.width_px, m.height_px, m.primary);
+                }
+                if let Some(m) = layer_targets(&app).first() {
+                    let (wx, wy, ww, _) = m.work_dip();
+                    let s = m.scale();
+                    println!("autoedit: done button screen {} {}", m.x + ((wx + ww / 2.0 + 270.0 - 50.0) * s) as i32, m.y + ((wy + 12.0 + 28.0) * s) as i32);
+                }
+                println!("autoedit: overlays {}", overlays.len());
+            }
         }
         // The hub's browser process is released while the hub is hidden (about 200 MB) and rebuilt when it is shown again,
         // whether from the tray, a second launch, or any other way the window becomes visible.
@@ -1344,7 +1757,7 @@ fn main() {
                         } else if app.st.profiles.len() >= 32 && !app.st.profiles.contains_key(&name) {
                             msg = Some("Too many profiles; delete one first.".into());
                         } else {
-                            let p = json!({ "scene": app.st.scene, "wallpaper": app.st.wallpaper, "monitor_walls": app.st.monitor_walls, "placements": app.st.placements, "fallback": app.st.fallback, "scrim": app.st.scrim,
+                            let p = json!({ "scene": app.st.scene, "wallpaper": app.st.wallpaper, "monitor_walls": app.st.monitor_walls, "placements": app.st.placements, "fallback": app.st.fallback, "scrim": app.st.scrim, "skin": { "global": app.st.skin_global, "widgets": app.st.skin_widget },
                                 "lib_sel": app.st.lib_sel.iter().map(|(k, x)| (k.clone(), json!({ "key": x.key, "fit": x.fit, "bg": x.bg }))).collect::<serde_json::Map<_, _>>(),
                                 "slides": app.st.slides.iter().map(|(k, x)| (k.clone(), json!({ "minutes": x.minutes, "shuffle": x.shuffle, "filter": x.filter }))).collect::<serde_json::Map<_, _>>() });
                             app.st.profiles.insert(name.clone(), p);
@@ -1372,10 +1785,16 @@ fn main() {
                             if let Some(sc) = p.get("scene").and_then(Value::as_str) {
                                 app.st.scene = scene(sc).id.to_string();
                             }
-                            app.st.wallpaper = p.get("wallpaper").and_then(Value::as_str).filter(|w| w.is_empty() || app.walls.lock().unwrap().get(w).is_some()).unwrap_or("").to_string();
-                            app.st.monitor_walls = p.get("monitor_walls").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, w)| w.as_str().filter(|w| app.walls.lock().unwrap().get(w).is_some()).map(|w| (k.clone(), w.to_string()))).collect()).unwrap_or_default();
+                            app.st.wallpaper = p.get("wallpaper").and_then(Value::as_str).filter(|w| w.is_empty() || app.walls.lock().unwrap().get_live(w).is_some()).unwrap_or("").to_string();
+                            app.st.monitor_walls = p.get("monitor_walls").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, w)| w.as_str().filter(|w| app.walls.lock().unwrap().get_live(w).is_some()).map(|w| (k.clone(), w.to_string()))).collect()).unwrap_or_default();
                             app.st.placements = p.get("placements").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect()).unwrap_or_default();
                             app.st.fallback = p.get("fallback").and_then(Value::as_str).unwrap_or("").to_string();
+                            if let Some(sk) = p.get("skin") {
+                                let all = app.all_skins();
+                                let known = |id: &str| all.iter().any(|s| s.id == id);
+                                app.st.skin_global = sk.get("global").and_then(Value::as_str).filter(|g| known(g)).unwrap_or(plinth_core::skin::DEFAULT_ID).to_string();
+                                app.st.skin_widget = sk.get("widgets").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, x)| x.as_str().filter(|s| known(s)).map(|s| (k.clone(), s.to_string()))).collect()).unwrap_or_default();
+                            }
                             app.st.scrim = p.get("scrim").and_then(Value::as_str).filter(|m| ["none", "dim", "blur"].contains(m)).unwrap_or("none").to_string();
                             let (sel_keys, slide_keys) = (p.get("lib_sel").cloned().unwrap_or(Value::Null), p.get("slides").cloned().unwrap_or(Value::Null));
                             app.st.lib_sel = sel_keys.as_object().map(|o| o.iter().filter_map(|(k, x)| Some((k.clone(), state::Sel { key: x.get("key")?.as_str().filter(|k| corelib::valid_key(k))?.to_string(), fit: x.get("fit").and_then(Value::as_str).filter(|f| FitMode::parse(f).is_some()).unwrap_or("fill").to_string(), bg: x.get("bg").and_then(Value::as_str).filter(|c| fit::parse_color(c).is_some()).unwrap_or("#000000").to_string() }))).collect()).unwrap_or_default();
@@ -1463,11 +1882,11 @@ fn main() {
                                 continue; // copies are a local choice; a card lists each widget once
                             }
                             let (Some(w), Some(mi)) = (info.iter().find(|w| w.id == r.widget), app.monitors.iter().position(|m| m.id == r.monitor)) else { continue };
-                            items.push(cardmod::ExportItem { widget: w.id.clone(), version: w.version.clone(), monitor: mi.min(7) as u8, x: r.x, y: r.y, w: r.w, h: r.h });
+                            items.push(cardmod::ExportItem { widget: w.id.clone(), version: w.version.clone(), monitor: mi.min(7) as u8, x: r.x, y: r.y, w: r.w, h: r.h, skin: app.st.skin_widget.get(&r.widget).cloned() });
                         }
                         let sizes: Vec<(f32, f32)> = app.monitors.iter().map(|m| m.size_dip()).collect();
                         let author = std::env::var("USERNAME").unwrap_or_else(|_| "Me".into());
-                        match SetupCard::export(&name, &author, &app.st.scene, None, &sizes, &items) {
+                        match SetupCard::export(&name, &author, &app.st.scene, None, &sizes, &items, Some(&app.st.skin_global), &app.st.skins) {
                             Ok(card) => {
                                 let dir = std::env::var_os("PLINTH_CARDS").map(PathBuf::from).unwrap_or_else(|| std::env::var_os("USERPROFILE").map(|u| PathBuf::from(u).join("Documents").join("Plinth").join("Cards")).unwrap_or_else(std::env::temp_dir));
                                 let _ = std::fs::create_dir_all(&dir);
@@ -1500,6 +1919,8 @@ fn main() {
                     "card_apply" => {
                         if let Some(card) = app.pending_card.take() {
                             app.undo_placements = Some(app.st.placements.clone());
+                            app.undo_skins = Some((app.st.skins.clone(), app.st.skin_global.clone(), app.st.skin_widget.clone()));
+                            let skin_map = import_card_skins(&mut app.st, &card);
                             let installed: Vec<String> = app.host.lock().unwrap().describe().into_iter().map(|w| w.id).collect();
                             let mut applied = 0;
                             for cp in &card.widgets {
@@ -1513,9 +1934,15 @@ fn main() {
                                 let pl = plinth_core::monitors::Placement { widget: cp.widget.clone(), home: if m.primary { mons::ROLE_PRIMARY.to_string() } else { m.id.clone() }, home_fingerprint: m.fingerprint.clone(), anchor: mons::Anchor::TopLeft, dx: cp.x as f32 / g * mw, dy: cp.y as f32 / g * mh, w: (cp.w as f32 / g * mw).max(96.0), h: (cp.h as f32 / g * mh).max(96.0) };
                                 app.st.placements.retain(|p| p.widget != cp.widget);
                                 app.st.placements.push(pl);
+                                if let Some(sid) = cp.skin.as_ref().and_then(|s| skin_map.get(s)) {
+                                    app.st.skin_widget.insert(cp.widget.clone(), sid.clone());
+                                }
                                 applied += 1;
                             }
                             app.st.scene = scene(&card.scene).id.to_string();
+                            if let Some(g) = card.skin.as_ref().and_then(|s| skin_map.get(s)) {
+                                app.st.skin_global = g.clone();
+                            }
                             app.park_all = false;
                             reload = true;
                             relayout = true;
@@ -1571,6 +1998,132 @@ fn main() {
                             _ => msg = Some("That widget or monitor is not available.".into()),
                         }
                     }
+                    "skin_global" => {
+                        let id = v.get("id").and_then(Value::as_str).unwrap_or("");
+                        if app.all_skins().iter().any(|s| s.id == id) {
+                            app.st.skin_global = id.to_string();
+                            relayout = true;
+                            msg = Some("Skin applied to all widgets that do not have their own.".into());
+                        } else {
+                            msg = Some("That skin is not available.".into());
+                        }
+                    }
+                    "skin_widget" => {
+                        let (wid, id) = (v.get("widget").and_then(Value::as_str).unwrap_or(""), v.get("id").and_then(Value::as_str).unwrap_or(""));
+                        if !app.st.placements.iter().any(|p| p.widget == wid) {
+                            msg = Some("That widget is not available.".into());
+                        } else if id.is_empty() {
+                            app.st.skin_widget.remove(wid);
+                            relayout = true;
+                            msg = Some("The widget follows the global skin again.".into());
+                        } else if app.all_skins().iter().any(|s| s.id == id) {
+                            app.st.skin_widget.insert(wid.to_string(), id.to_string());
+                            relayout = true;
+                            msg = Some("Skin set for that widget.".into());
+                        } else {
+                            msg = Some("That skin is not available.".into());
+                        }
+                    }
+                    "skin_save" => {
+                        // Create or update a custom skin from the hub. Validated like a card: out-of-range values are refused, not clamped.
+                        let mut o = v.get("skin").cloned().unwrap_or(Value::Null);
+                        let id = o.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                        let new_id = if id.is_empty() { (1..100).map(|n| format!("my-skin-{n}")).find(|c| !app.all_skins().iter().any(|s| &s.id == c)) } else { Some(id.clone()) };
+                        match new_id {
+                            None => msg = Some("Too many skins.".into()),
+                            Some(nid) => {
+                                o["id"] = json!(nid);
+                                match plinth_core::skin::Skin::from_value(&o) {
+                                    Ok(s) if app.st.skins.iter().any(|x| x.id == s.id) => {
+                                        app.last_skin = s.id.clone();
+                                        if let Some(x) = app.st.skins.iter_mut().find(|x| x.id == s.id) {
+                                            *x = s;
+                                        }
+                                        relayout = true;
+                                    }
+                                    Ok(s) if app.st.skins.len() >= plinth_core::skin::MAX_SKINS => {
+                                        let _ = s;
+                                        msg = Some("Too many skins; delete one first.".into());
+                                    }
+                                    Ok(s) => {
+                                        app.last_skin = s.id.clone();
+                                        app.st.skins.push(s);
+                                        relayout = true;
+                                        msg = Some("Skin saved.".into());
+                                    }
+                                    Err(e) => msg = Some(format!("That skin is not valid ({e:?}). Built-in skins cannot be changed; make a copy.")),
+                                }
+                            }
+                        }
+                    }
+                    "skin_delete" => {
+                        let id = v.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                        let before = app.st.skins.len();
+                        app.st.skins.retain(|s| s.id != id);
+                        if app.st.skins.len() < before {
+                            if app.st.skin_global == id {
+                                app.st.skin_global = plinth_core::skin::DEFAULT_ID.to_string();
+                            }
+                            app.st.skin_widget.retain(|_, s| *s != id);
+                            relayout = true;
+                            msg = Some("Skin deleted. Widgets that used it follow the global skin.".into());
+                        } else {
+                            msg = Some("Only your own skins can be deleted.".into());
+                        }
+                    }
+                    "overlay_set" => {
+                        let id = v.get("id").and_then(Value::as_str).unwrap_or("");
+                        let cfg = plinth_core::motion::MotionConfig::sanitized(id, v.get("intensity").and_then(Value::as_i64).unwrap_or(2), v.get("speed").and_then(Value::as_i64).unwrap_or(100));
+                        let known = cfg.id.is_empty() || app.walls.lock().unwrap().get_overlay(&cfg.id).is_some();
+                        if known {
+                            app.st.fx = cfg;
+                            reload = app.st.applied;
+                            msg = Some(if app.st.fx.is_on() { "Motion overlay chosen. It pauses in games and uses a little CPU while you look at the desktop.".into() } else { "Motion overlay off.".into() });
+                        } else {
+                            msg = Some("That overlay is not available.".into());
+                        }
+                    }
+                    "edit_layout" => {
+                        let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
+                        overlays.clear();
+                        app.editing = false;
+                        if on {
+                            let fake = app.fake.lock().unwrap().is_some();
+                            if !app.st.applied {
+                                msg = Some("Press Apply first: the layout is edited on your desktop.".into());
+                            } else if app.st.safe {
+                                msg = Some("Safe mode is on, so no widgets are shown. Turn it off to edit the layout.".into());
+                            } else if fake {
+                                msg = Some("Editing on the desktop needs your real monitors (test monitors are on).".into());
+                            } else {
+                                let targets = layer_targets(&app);
+                                for (i, m) in targets.iter().enumerate() {
+                                    if let Some(o) = open_overlay(target, &app, m, i == 0, &proxy) {
+                                        overlays.push(o);
+                                    }
+                                }
+                                app.editing = !overlays.is_empty();
+                                msg = Some(if app.editing { "Edit layout is on: drag widgets on your desktop. Esc or Done finishes.".into() } else { "Plinth could not open the edit overlay.".into() });
+                            }
+                        }
+                    }
+                    "snap_set" => {
+                        app.st.snap = plinth_core::placement::SnapConfig::sanitized(v.get("mode").and_then(Value::as_str).unwrap_or("both"), v.get("grid").and_then(Value::as_f64).unwrap_or(24.0) as f32);
+                        refresh_overlays(&app, &overlays);
+                        msg = Some("Snapping updated.".into());
+                    }
+                    "place" => {
+                        // Drop from the hub's layout diagram: (x, y) are DIP from the top-left of the monitor `monitor`.
+                        let (wid, mid) = (v.get("widget").and_then(Value::as_str).unwrap_or(""), v.get("monitor").and_then(Value::as_str).unwrap_or(""));
+                        let (x, y) = (v.get("x").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32, v.get("y").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32);
+                        match app.commit_place(wid, mid, x, y) {
+                            Ok(m) => {
+                                relayout = true;
+                                msg = Some(m);
+                            }
+                            Err(m) => msg = Some(m),
+                        }
+                    }
                     "fallback" => {
                         let mid = v.get("monitor").and_then(Value::as_str).unwrap_or("");
                         if mid.is_empty() || app.monitors.iter().any(|m| m.id == mid) {
@@ -1592,6 +2145,11 @@ fn main() {
                         msg = Some("Widget positions reset. Undo is available.".into());
                     }
                     "undo_positions" => {
+                        if let Some((sk, g, w)) = app.undo_skins.take() {
+                            app.st.skins = sk;
+                            app.st.skin_global = g;
+                            app.st.skin_widget = w;
+                        }
                         if let Some(prev) = app.undo_placements.take() {
                             app.st.placements = prev;
                             relayout = true;
@@ -1600,7 +2158,7 @@ fn main() {
                     }
                     "monitor_wallpaper" => {
                         let (mid, wid) = (v.get("monitor").and_then(Value::as_str).unwrap_or(""), v.get("id").and_then(Value::as_str).unwrap_or(""));
-                        let known = wid.is_empty() || app.walls.lock().unwrap().get(wid).is_some();
+                        let known = wid.is_empty() || app.walls.lock().unwrap().get_live(wid).is_some();
                         if let (Some(m), true) = (app.monitors.iter().find(|m| m.id == mid).cloned(), known) {
                             if m.primary {
                                 app.st.wallpaper = wid.to_string();
@@ -1664,7 +2222,7 @@ fn main() {
                     }
                     "wallpaper" => {
                         let id = v.get("id").and_then(Value::as_str).unwrap_or("");
-                        let name = app.walls.lock().unwrap().get(id).map(|e| e.wallpaper.name.clone());
+                        let name = app.walls.lock().unwrap().get_live(id).map(|e| e.wallpaper.name.clone());
                         match (id.is_empty(), name) {
                             (true, _) => {
                                 app.st.wallpaper.clear();
@@ -1724,6 +2282,14 @@ fn main() {
                         app.recompute();
                     }
                     sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                }
+                if app.editing && (reload || relayout) {
+                    if app.st.safe || !app.st.applied {
+                        overlays.clear();
+                        app.editing = false;
+                    } else {
+                        refresh_overlays(&app, &overlays);
+                    }
                 }
                 sampler.set_active(!layers.is_empty() && !app.st.safe && !app.paused);
                 if cmd != "state" {
@@ -1825,6 +2391,8 @@ fn main() {
             Event::UserEvent(Ev::Monitors(list)) => {
                 let (gone, came) = mons::diff_monitors(&app.monitors, &list);
                 println!("monitors changed: gone [{}], new [{}]", gone.join(", "), came.join(", "));
+                overlays.clear(); // the shapes would be wrong; the user opens edit layout again
+                app.editing = false;
                 app.monitors = list;
                 app.park_all = false; // a real display change returns to the saved layout
                 app.recompute();
@@ -1836,6 +2404,62 @@ fn main() {
                 request_statics(&app, &proxy, None);
                 let note = if !gone.is_empty() && parked > 0 { Some(format!("{} disconnected: {parked} widget(s) moved to a visible monitor and will return when it reconnects.", gone.join(", "))) } else if !came.is_empty() { Some(format!("{} connected.", came.join(", "))) } else { None };
                 reply(&app, &hub_view, note.as_deref());
+            }
+            Event::UserEvent(Ev::Edit { monitor, msg }) => {
+                let Ok(v) = serde_json::from_str::<Value>(&msg) else { return };
+                let t = v.get("t").and_then(Value::as_str).unwrap_or("");
+                let id = v.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let (x, y) = (v.get("x").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32, v.get("y").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32);
+                if t != "preview" || std::env::var_os("PLINTH_EDIT_TRACE").is_some() {
+                    println!("edit: message {t} {id} at {x},{y} on {monitor}");
+                }
+                match t {
+                    "hover" => {
+                        // While the pointer is over a widget the window covers the whole monitor, so a drag can go anywhere (and the
+                        // pointer capture is never disturbed by a window change in the middle of a drag); when the pointer leaves it is
+                        // shaped back to the widgets and the desktop icons are clickable again.
+                        if let Some(o) = overlays.iter().find(|o| o.monitor == monitor) {
+                            if v.get("on").and_then(Value::as_bool).unwrap_or(false) {
+                                win::set_region(o.window.hwnd() as isize, &[]);
+                            } else if let Some(m) = app.monitors.iter().find(|m| m.id == monitor) {
+                                win::set_region(o.window.hwnd() as isize, &overlay_region(&app.edit_data(m, app.monitors.iter().position(|x| x.id == m.id) == Some(0) || m.primary), m.scale()));
+                            }
+                        }
+                    }
+                    "preview" => {
+                        if let (Some((t, s, _)), Some(o)) = (app.snap_for(&id, &monitor, x, y), overlays.iter().find(|o| o.monitor == monitor)) {
+                            let g = json!({ "here": t.id == monitor, "x": s.rect.x, "y": s.rect.y, "w": s.rect.w, "h": s.rect.h, "gx": s.guide_x, "gy": s.guide_y });
+                            let _ = o.view.evaluate_script(&format!("__ghost({g})"));
+                        }
+                    }
+                    "drop" | "nudge" => {
+                        let m = match app.commit_place(&id, &monitor, x, y) {
+                            Ok(m) => {
+                                app.recompute();
+                                sync_layers(target, &app, &mut layers, &mut layer_ctx, &proxy);
+                                app.persist();
+                                println!("edit: {t} {id} on {monitor} handled");
+                                if let Some((r, m)) = app.resolved.iter().find(|r| r.widget == id).and_then(|r| app.monitors.iter().find(|m| m.id == r.monitor).map(|m| (r, m))) {
+                                    println!("edit: placed {id} at screen {} {} on {}", m.x + (r.x * m.scale()) as i32, m.y + (r.y * m.scale()) as i32, m.name);
+                                }
+                                m
+                            }
+                            Err(m) => {
+                                println!("edit: refused: {m}");
+                                m
+                            }
+                        };
+                        refresh_overlays(&app, &overlays);
+                        reply(&app, &hub_view, Some(&m));
+                    }
+                    "done" => {
+                        overlays.clear();
+                        app.editing = false;
+                        println!("edit: layout editing finished");
+                        reply(&app, &hub_view, Some("Layout saved."));
+                    }
+                    _ => {}
+                }
             }
             Event::UserEvent(Ev::IdentifyEnd) => identify.clear(),
             Event::UserEvent(Ev::LibraryChanged) => {
@@ -1976,6 +2600,52 @@ fn main() {
                     }
                 }
                 21..=25 | 27..=29 => mon_snaps.push(MonSnap::take(&app, &layers)),
+                70..=78 => {
+                    let label = ["rain", "bad-ids", "with-aurora", "wallpaper-cleared", "paused", "resumed", "busy", "as-wallpaper", "safe"][(step - 70) as usize];
+                    let page = app.primary_id().and_then(|id| app.monitors.iter().find(|m| m.id == id).cloned()).map(|m| app.layer_html(&m)).unwrap_or_default();
+                    let tag: String = page.find("<iframe id=\"wo\"").map(|i| page[i..].chars().take_while(|c| *c != '>').collect()).unwrap_or_default();
+                    let served: Vec<String> = app.wall_log.lock().unwrap().iter().filter(|(p, _)| p.contains("fx-")).map(|(p, st)| format!("{p} {st}")).collect();
+                    fx_snaps.push((label.to_string(), json!({ "tag": tag, "fx": app.fx_status(), "wallpaper": app.st.wallpaper, "overlay": app.st.fx.id, "intensity": app.st.fx.intensity, "served": served, "paused": app.paused })));
+                    if let Some(l) = app.primary_id().and_then(|id| layers.get(&id)) {
+                        let (store, name) = (fx_js.clone(), label.to_string());
+                        let js = "(()=>{const o=document.getElementById('wo');return JSON.stringify({present:!!o,src:o?o.src:''})})()";
+                        let _ = l.webview.evaluate_script_with_callback(js, move |r| store.lock().unwrap().push((name.clone(), r)));
+                    }
+                }
+                80..=88 => {
+                    let label = ["custom", "global", "per-widget", "refused", "export", "hostile-card", "imported", "undone", "deleted"][(step - 80) as usize];
+                    let mut extra = Value::Null;
+                    if label == "export" {
+                        // read back the card the app just wrote and parse it with the strict parser
+                        let dir = std::env::var("PLINTH_CARDS").unwrap_or_default();
+                        let file = std::path::Path::new(&dir).join("skin-test.plinthcard");
+                        extra = match std::fs::read_to_string(&file) {
+                            Ok(t) => match SetupCard::parse(&t) {
+                                Ok(c) => json!({ "parsed": true, "skin": c.skin, "skins": c.skins.iter().map(|s| s.id.clone()).collect::<Vec<_>>(), "clock": c.widgets.iter().find(|w| w.widget == "com.plinth.clock").and_then(|w| w.skin.clone()), "tint": c.skins.first().and_then(|s| s.tint).map(|t| format!("{:02x}{:02x}{:02x}", t.0, t.1, t.2)), "has_css_chars": t.contains(';') || t.contains("url(") }),
+                                Err(e) => json!({ "parsed": false, "err": format!("{e:?}") }),
+                            },
+                            Err(e) => json!({ "parsed": false, "err": e.to_string() }),
+                        };
+                    }
+                    skin_snaps.push((label.to_string(), json!({ "skins": app.st.skins.iter().map(|x| json!([x.id, x.radius, x.name])).collect::<Vec<_>>(), "global": app.st.skin_global, "widgets": app.st.skin_widget, "pending": app.pending_card.is_some(), "extra": extra, "msg_len": 0 })));
+                    if matches!(label, "global" | "per-widget" | "deleted" | "imported") {
+                        if let Some(l) = app.primary_id().and_then(|id| layers.get(&id)) {
+                            let (store, name) = (fx_js.clone(), label.to_string());
+                            let js = r#"JSON.stringify([...document.querySelectorAll('.slot')].map(s=>{const c=getComputedStyle(s);return {id:s.querySelector('iframe').title,radius:c.borderTopLeftRadius,bg:c.backgroundColor,bf:c.backdropFilter||'',sh:c.boxShadow}}))"#;
+                            let _ = l.webview.evaluate_script_with_callback(js, move |r| store.lock().unwrap().push((name.clone(), r)));
+                        }
+                    }
+                }
+                89 => {
+                    let code = skin_report(&skin_snaps, &fx_js.lock().unwrap());
+                    app.persist();
+                    std::process::exit(code);
+                }
+                79 => {
+                    let code = fx_report(&fx_snaps, &fx_js.lock().unwrap());
+                    app.persist();
+                    std::process::exit(code);
+                }
                 60 => {
                     if let Some(v) = &hub_view {
                         let _ = v.evaluate_script("show('wallpapers')");
@@ -2120,6 +2790,87 @@ fn library_report(p: &LibProbe) -> i32 {
     i32::from(failed != 0)
 }
 
+/// Skin checks (steps 80 to 88): what is saved, what the live layer really renders, and how cards carry and refuse skins.
+fn skin_report(snaps: &[(String, Value)], js: &[(String, String)]) -> i32 {
+    println!("\n===== Skins =====");
+    for (n, v) in snaps {
+        println!("   {n}: {v}");
+    }
+    let g = |l: &str| snaps.iter().find(|s| s.0 == l).map(|s| &s.1);
+    // the layer's answer is a JSON string inside a JSON string
+    let live = |l: &str| -> Vec<(String, String, String, String)> {
+        let raw = js.iter().find(|s| s.0 == l).map(|s| s.1.clone()).unwrap_or_default();
+        let inner: String = serde_json::from_str(&raw).unwrap_or_default();
+        let v: Value = serde_json::from_str(&inner).unwrap_or(Value::Null);
+        v.as_array().map(|a| a.iter().map(|x| (x["id"].as_str().unwrap_or("").to_string(), x["radius"].as_str().unwrap_or("").to_string(), x["bg"].as_str().unwrap_or("").to_string(), x["bf"].as_str().unwrap_or("").to_string())).collect()).unwrap_or_default()
+    };
+    for l in ["global", "per-widget", "imported", "deleted"] {
+        println!("   live {l}: {:?}", live(l));
+    }
+    let radius_of = |l: &str, id: &str| live(l).into_iter().find(|x| x.0 == id).map(|x| x.1).unwrap_or_default();
+    let checks: Vec<(&str, bool)> = vec![
+        ("all nine snapshots were taken", snaps.len() == 9),
+        ("a custom skin was saved from validated numbers (one skin, id my-skin-1)", g("custom").map_or(false, |v| v["skins"].as_array().map_or(false, |a| a.len() == 1 && a[0][0] == "my-skin-1" && a[0][1] == 30))),
+        ("as the global skin it really changes the live widgets: corner radius 30 px, glass rgba(16,32,48,0.7), blur 32 px", { let l = live("global"); !l.is_empty() && l.iter().all(|x| x.1 == "30px" && x.2 == "rgba(16, 32, 48, 0.7)" && x.3.contains("blur(32px)")) }),
+        ("a per-widget skin beats the global one: the clock has the Terminal skin (4 px corners) and the others keep 30 px", radius_of("per-widget", "com.plinth.clock") == "4px" && live("per-widget").iter().filter(|x| x.0 != "com.plinth.clock").all(|x| x.1 == "30px") && live("per-widget").len() > 1),
+        ("bad skins (radius 3000, unknown font, CSS smuggled in a color, a built-in id, a path, an unknown global id) were all refused and changed nothing", g("refused").map_or(false, |v| v["skins"].as_array().map_or(false, |a| a.len() == 1) && v["global"] == "my-skin-1")),
+        ("an exported card carries the skin as numbers and names only and parses with the strict parser", g("export").map_or(false, |v| v["extra"]["parsed"] == true && v["extra"]["skin"] == "my-skin-1" && v["extra"]["skins"] == json!(["my-skin-1"]) && v["extra"]["clock"] == "terminal" && v["extra"]["tint"] == "102030" && v["extra"]["has_css_chars"] == false)),
+        ("a card whose skin hides CSS in a color and a URL in a font is refused before anything is shown", g("hostile-card").map_or(false, |v| v["pending"] == false)),
+        ("a card skin with the same id as one of mine is imported under a new id and never overwrites mine", g("imported").map_or(false, |v| v["skins"].as_array().map_or(false, |a| a.len() == 2 && a.iter().any(|x| x[0] == "my-skin-1" && x[1] == 30) && a.iter().any(|x| x[0] == "my-skin-1-2" && x[1] == 5)) && v["global"] == "my-skin-1-2")),
+        ("the imported skin is live on the widgets (5 px corners)", live("imported").iter().filter(|x| x.0 != "com.plinth.clock").all(|x| x.1 == "5px") && !live("imported").is_empty()),
+        ("Undo restores my skins, the global choice and the per-widget choice from before the card", g("undone").map_or(false, |v| v["skins"].as_array().map_or(false, |a| a.len() == 1 && a[0][0] == "my-skin-1") && v["global"] == "my-skin-1" && v["widgets"]["com.plinth.clock"] == "terminal")),
+        ("deleting a skin sends everything that used it back to the default look (22 px corners)", g("deleted").map_or(false, |v| v["skins"].as_array().map_or(false, |a| a.is_empty()) && v["global"] == plinth_core::skin::DEFAULT_ID && v["widgets"].as_object().map_or(true, |o| !o.contains_key("com.plinth.clock") || o["com.plinth.clock"] == "terminal")) && live("deleted").iter().filter(|x| x.0 != "com.plinth.clock").all(|x| x.1 == "22px") && !live("deleted").is_empty()),
+    ];
+    let mut failed = 0;
+    for (n, ok) in &checks {
+        println!("[{}] {n}", if *ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed += 1;
+        }
+    }
+    println!("\n{} of {} checks passed", checks.len() - failed, checks.len());
+    i32::from(failed != 0)
+}
+
+/// Motion overlay checks (steps 70 to 78): the page the layer loads, what the hub is told, and the live layer's own view.
+fn fx_report(snaps: &[(String, Value)], js: &[(String, String)]) -> i32 {
+    println!("\n===== Motion overlay =====");
+    for (n, v) in snaps {
+        println!("   {n}: {v}");
+    }
+    for (n, v) in js {
+        println!("   live {n}: {v}");
+    }
+    let g = |l: &str| snaps.iter().find(|s| s.0 == l).map(|s| &s.1);
+    let live = |l: &str| js.iter().find(|s| s.0 == l).map(|s| s.1.replace("\\\"", "\"").replace('\\', "")).unwrap_or_default();
+    let tag = |l: &str| g(l).and_then(|v| v["tag"].as_str()).unwrap_or("").to_string();
+    let checks: Vec<(&str, bool)> = vec![
+        ("all nine snapshots were taken", snaps.len() == 9),
+        ("an overlay is drawn above the Scene: the layer page has a sandboxed iframe from the wallpaper origin with only two numbers in its query", { let t = tag("rain"); t.contains("sandbox=\"allow-scripts\"") && t.contains("http://pwv.localhost/com.plinth.fx-rain/index.html?i=2&s=100") && !t.contains("allow-same-origin") }),
+        ("the overlay page was really served to the layer (status 200)", g("rain").and_then(|v| v["served"].as_array()).map_or(false, |a| a.iter().any(|x| x.as_str().map_or(false, |x| x.contains("fx-rain/index.html") && x.ends_with(" 200"))))),
+        ("the live layer has the overlay frame loaded with that address", live("rain").contains("present\":true") && live("rain").contains("fx-rain/index.html?i=2&s=100")),
+        ("the hub is told it is drawn and what it costs", g("rain").map_or(false, |v| v["fx"]["drawn"] == true && v["fx"]["cost"].as_str().map_or(false, |c| c.contains("MB") && c.contains("%")))),
+        ("after a missing package and a string that is not an id, no overlay is chosen and no path is ever built from the string", g("bad-ids").map_or(false, |v| v["overlay"] == "")),
+        ("a string that is not an id means none (nothing is drawn, no path is ever built from it)", g("bad-ids").map_or(false, |v| v["tag"] == "" && v["fx"]["drawn"] == false)),
+        ("with a live wallpaper selected, only one motion item runs: the overlay is not drawn and the hub says why", g("with-aurora").map_or(false, |v| v["tag"] == "" && v["fx"]["drawn"] == false && v["fx"]["why"].as_str().map_or(false, |w| w.contains("only one motion item")))),
+        ("choosing the Scene background again brings it back", g("wallpaper-cleared").map_or(false, |v| v["tag"].as_str().map_or(false, |t| t.contains("fx-rain")))),
+        ("the governor unloads the overlay (its frame goes to a blank page, so its script stops)", live("paused").contains("about:blank")),
+        ("and loads it again when the governor lets go", live("resumed").contains("fx-rain/index.html?i=2&s=100")),
+        ("amount and speed change the numbers in the query and raise the cost", tag("busy").contains("?i=3&s=150") && g("busy").zip(g("rain")).map_or(false, |(b, r)| b["fx"]["cost"] != r["fx"]["cost"])),
+        ("an overlay cannot be chosen as the wallpaper", g("as-wallpaper").map_or(false, |v| v["wallpaper"] == "")),
+        ("Safe mode draws no overlay", g("safe").map_or(false, |v| v["tag"] == "")),
+    ];
+    let mut failed = 0;
+    for (n, ok) in &checks {
+        println!("[{}] {n}", if *ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed += 1;
+        }
+    }
+    println!("\n{} of {} checks passed", checks.len() - failed, checks.len());
+    i32::from(failed != 0)
+}
+
 /// Snapshots: (scene, current mood, suggestion pending, rule count, card pending, can undo) at steps 50 to 56.
 fn mood_report(app: &App, snaps: &[(String, String, bool, usize, bool, bool)]) -> i32 {
     println!("\n===== Moods and setup cards =====");
@@ -2198,6 +2949,8 @@ fn monitor_report(app: &App, snaps: &[MonSnap]) -> i32 {
         ("G: Undo brings the previous assignments back", g(6).map_or(false, |s| Some(&s.resolved) == g(0).map(|a| &a.resolved) && Some(&s.homes) == g(0).map(|a| &a.homes))),
         ("H: a second copy of the clock runs on monitor C while the first stays on monitor B", g(7).map_or(false, |s| s.on(clock) == Some(("FAKE#B", false)) && s.on("com.plinth.clock#2") == Some(("FAKE#C", false)))),
         ("H: monitor C now has a layer for both the vitals and the clock copy", g(7).map_or(false, |s| s.layers.contains(&"FAKE#C".to_string()))),
+        ("I: a drop from the hub diagram saved a corner anchor and offsets near the dropped place (snapped by at most one grid step), on monitor B, with the real size", app.st.placements.iter().any(|p| p.widget == clock && p.home == "FAKE#B" && p.anchor == mons::Anchor::TopLeft && (p.dx - 300.0).abs() <= 30.0 && (p.dy - 200.0).abs() <= 30.0 && p.w == 360.0 && p.h == 118.0)),
+        ("I: a drop while widgets are only temporarily on the primary was refused and saved nothing", app.st.placements.iter().any(|p| p.widget == clock && (p.dx - 300.0).abs() <= 30.0) && !app.st.placements.iter().any(|p| p.widget == clock && p.dx > 700.0)),
         ("the saved home of the clock stayed monitor B in the file the app writes", app.st.placements.iter().any(|p| p.widget == clock && p.home == "FAKE#B")),
     ];
     let mut failed = 0;

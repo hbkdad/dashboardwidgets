@@ -2,8 +2,11 @@
 //! This is the "copy that setup" unit that Linux ricing culture shares as dotfiles, made safe and one-click:
 //! a card references widgets by id and version, never contains code, and shows the combined permissions
 //! before anything is installed or applied.
+//!
+//! A card may also carry skins (D37): numbers, two colors and two names from closed lists, validated by [`crate::skin`]. Still no code.
 
 use crate::manifest::{valid_id, valid_version, Manifest};
+use crate::skin::{self, Skin};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -23,6 +26,8 @@ pub struct Placement {
     pub w: u32,
     pub h: u32,
     pub monitor: u8,
+    /// Skin for this widget (a built-in id, or one of the card's own skins); None = the card's global skin.
+    pub skin: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +39,10 @@ pub struct SetupCard {
     pub remix_of: Option<String>,
     pub scene: String,
     pub accent: Option<String>,
+    /// Global skin (a built-in id, or one of `skins`).
+    pub skin: Option<String>,
+    /// The custom skins the card uses (at most [`skin::MAX_CARD_SKINS`]).
+    pub skins: Vec<Skin>,
     pub widgets: Vec<Placement>,
 }
 
@@ -50,6 +59,8 @@ pub enum SetupError {
     TooSmall(String),
     BadMonitor(u8),
     BadName,
+    /// A skin that is invalid, or a reference to a skin the card does not define and Plinth does not ship.
+    BadSkin(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +88,8 @@ struct RawPlacement {
     rect: [u32; 4],
     #[serde(default)]
     monitor: u8,
+    #[serde(default)]
+    skin: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +103,10 @@ struct RawCard {
     scene: String,
     #[serde(default)]
     accent: Option<String>,
+    #[serde(default)]
+    skin: Option<String>,
+    #[serde(default)]
+    skins: Option<serde_json::Value>,
     widgets: Vec<RawPlacement>,
 }
 
@@ -112,6 +129,8 @@ pub struct ExportItem {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// This widget's own skin id, if it has one.
+    pub skin: Option<String>,
 }
 
 /// A stable card id from a name: lowercase letters, digits and hyphens.
@@ -139,7 +158,7 @@ pub fn slug_id(name: &str) -> String {
 impl SetupCard {
     /// Build a shareable card from the current layout. It contains no monitor names, ids, paths or user data: only the scene, the
     /// widget ids and versions, and where each widget sits as a fraction of its monitor (monitor 0 is the primary).
-    pub fn export(name: &str, author: &str, scene: &str, accent: Option<&str>, monitor_sizes_dip: &[(f32, f32)], items: &[ExportItem]) -> Result<SetupCard, SetupError> {
+    pub fn export(name: &str, author: &str, scene: &str, accent: Option<&str>, monitor_sizes_dip: &[(f32, f32)], items: &[ExportItem], global_skin: Option<&str>, custom_skins: &[Skin]) -> Result<SetupCard, SetupError> {
         let mut widgets = Vec::new();
         for it in items.iter().take(MAX_WIDGETS) {
             let Some(&(mw, mh)) = monitor_sizes_dip.get(it.monitor as usize) else { continue };
@@ -151,20 +170,36 @@ impl SetupCard {
             let h = ((it.h / mh * g).round() as u32).clamp(MIN_UNITS, GRID);
             let x = ((it.x / mw * g).round().max(0.0) as u32).min(GRID - w);
             let y = ((it.y / mh * g).round().max(0.0) as u32).min(GRID - h);
-            widgets.push(Placement { widget: it.widget.clone(), version: it.version.clone(), x, y, w, h, monitor: it.monitor.min(MAX_MONITORS - 1) });
+            widgets.push(Placement { widget: it.widget.clone(), version: it.version.clone(), x, y, w, h, monitor: it.monitor.min(MAX_MONITORS - 1), skin: it.skin.clone() });
         }
-        let card = SetupCard { id: format!("local.{}", slug_id(name)), name: name.trim().to_string(), author: author.trim().to_string(), remix_of: None, scene: scene.to_string(), accent: accent.map(String::from), widgets };
+        // Only skins that are actually used, and only custom ones (built-ins are known to every Plinth).
+        let used = |id: &str| global_skin == Some(id) || widgets.iter().any(|p| p.skin.as_deref() == Some(id));
+        let skins: Vec<Skin> = custom_skins.iter().filter(|s| used(&s.id)).take(skin::MAX_CARD_SKINS).cloned().collect();
+        let card = SetupCard { id: format!("local.{}", slug_id(name)), name: name.trim().to_string(), author: author.trim().to_string(), remix_of: None, scene: scene.to_string(), accent: accent.map(String::from), skin: global_skin.filter(|g| *g != skin::DEFAULT_ID).map(String::from), skins, widgets };
         // Round-trip through the strict parser so an exported card is always one that can be imported.
         SetupCard::parse(&card.to_json())?;
         Ok(card)
     }
 
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(&serde_json::json!({
+        let mut v = serde_json::json!({
             "format": SETUP_FORMAT, "id": self.id, "name": self.name, "author": self.author, "remix_of": self.remix_of, "scene": self.scene, "accent": self.accent,
-            "widgets": self.widgets.iter().map(|p| serde_json::json!({ "widget": p.widget, "version": p.version, "rect": [p.x, p.y, p.w, p.h], "monitor": p.monitor })).collect::<Vec<_>>(),
-        }))
-        .unwrap_or_default()
+            "widgets": self.widgets.iter().map(|p| {
+                let mut w = serde_json::json!({ "widget": p.widget, "version": p.version, "rect": [p.x, p.y, p.w, p.h], "monitor": p.monitor });
+                if let Some(s) = &p.skin {
+                    w["skin"] = serde_json::json!(s);
+                }
+                w
+            }).collect::<Vec<_>>(),
+        });
+        // Cards without skins keep the exact shape they always had.
+        if let Some(g) = &self.skin {
+            v["skin"] = serde_json::json!(g);
+        }
+        if !self.skins.is_empty() {
+            v["skins"] = serde_json::Value::Array(self.skins.iter().map(Skin::to_value).collect());
+        }
+        serde_json::to_string_pretty(&v).unwrap_or_default()
     }
 
     pub fn parse(json: &str) -> Result<SetupCard, SetupError> {
@@ -191,6 +226,16 @@ impl SetupCard {
                 return Err(SetupError::BadAccent(a.clone()));
             }
         }
+        let skins = match &raw.skins {
+            None | Some(serde_json::Value::Null) => Vec::new(),
+            Some(v) => skin::parse_list(v, skin::MAX_CARD_SKINS).map_err(|e| SetupError::BadSkin(format!("{e:?}")))?,
+        };
+        let known = |id: &str| Skin::is_builtin_id(id) || skins.iter().any(|s| s.id == id);
+        for r in raw.skin.iter().chain(raw.widgets.iter().filter_map(|w| w.skin.as_ref())) {
+            if !skin::valid_id(r) || !known(r) {
+                return Err(SetupError::BadSkin(r.chars().take(40).collect()));
+            }
+        }
         if raw.widgets.is_empty() {
             return Err(SetupError::NoWidgets);
         }
@@ -215,9 +260,9 @@ impl SetupCard {
             if x.checked_add(w).map_or(true, |e| e > GRID) || y.checked_add(h).map_or(true, |e| e > GRID) {
                 return Err(SetupError::OutOfBounds(p.widget));
             }
-            widgets.push(Placement { widget: p.widget, version: p.version, x, y, w, h, monitor: p.monitor });
+            widgets.push(Placement { widget: p.widget, version: p.version, x, y, w, h, monitor: p.monitor, skin: p.skin });
         }
-        Ok(SetupCard { id: raw.id, name: raw.name, author: raw.author, remix_of: raw.remix_of, scene: raw.scene, accent: raw.accent, widgets })
+        Ok(SetupCard { id: raw.id, name: raw.name, author: raw.author, remix_of: raw.remix_of, scene: raw.scene, accent: raw.accent, skin: raw.skin, skins, widgets })
     }
 
     /// What applying this card would require and allow. `installed` maps widget id to its manifest.
@@ -340,23 +385,77 @@ mod tests {
         assert!(tiny.iter().all(|(_, r)| r.x + r.w <= 80 && r.y + r.h <= 60));
     }
 
+    fn skin_card(extra: &str) -> String {
+        card(OK).replace(r#""scene":"dusk""#, &format!(r#""scene":"dusk",{extra}"#))
+    }
+    const GLOW: &str = r##"{"id":"my-glow","name":"My glow","tint":"#102030","opacity":60,"frost":80,"radius":30,"font":"mono","ink":"light"}"##;
+
+    #[test]
+    fn a_card_without_skins_still_parses_and_exports_the_old_shape() {
+        let c = SetupCard::parse(&card(OK)).unwrap();
+        assert_eq!((c.skin.clone(), c.skins.len(), c.widgets[0].skin.clone()), (None, 0, None));
+        let j = c.to_json();
+        assert!(!j.contains("\"skin\"") && !j.contains("\"skins\""), "{j}");
+    }
+
+    #[test]
+    fn a_card_can_carry_skins_and_choose_them_globally_and_per_widget() {
+        let j = skin_card(&format!(r#""skin":"my-glow","skins":[{GLOW}]"#)).replace(r#""rect":[70,120,300,160]"#, r#""rect":[70,120,300,160],"skin":"terminal""#);
+        let c = SetupCard::parse(&j).unwrap();
+        assert_eq!(c.skin.as_deref(), Some("my-glow"));
+        assert_eq!(c.skins[0].id, "my-glow");
+        assert_eq!(c.widgets[0].skin.as_deref(), Some("terminal"), "a built-in id needs no definition");
+        assert_eq!(SetupCard::parse(&c.to_json()).unwrap(), c);
+    }
+
+    #[test]
+    fn a_card_cannot_use_an_undefined_skin_or_smuggle_code_in_one() {
+        let p = |extra: &str| SetupCard::parse(&skin_card(extra));
+        assert!(matches!(p(r#""skin":"not-defined""#), Err(SetupError::BadSkin(_))));
+        assert!(matches!(p(r#""skin":"../x""#), Err(SetupError::BadSkin(_))));
+        assert!(matches!(p(&format!(r#""skin":"frosted","skins":[{}]"#, GLOW.replace("mono", "url(evil.woff2)"))), Err(SetupError::BadSkin(_))));
+        assert!(matches!(p(&format!(r#""skins":[{}]"#, GLOW.replace("#102030", "red; background:url(http://evil)"))), Err(SetupError::BadSkin(_))));
+        assert!(matches!(p(&format!(r#""skins":[{}]"#, GLOW.replace(r#""radius":30"#, r#""radius":3000"#))), Err(SetupError::BadSkin(_))));
+        assert!(matches!(p(&format!(r#""skins":[{}]"#, GLOW.replace("my-glow", "frosted"))), Err(SetupError::BadSkin(_))), "a card cannot redefine a built-in skin");
+        assert!(matches!(p(&format!(r#""skins":[{GLOW},{GLOW}]"#)), Err(SetupError::BadSkin(_))), "duplicate ids");
+        assert!(matches!(p(r#""skins":"not a list""#), Err(SetupError::BadSkin(_))));
+        let many = (0..=skin::MAX_CARD_SKINS).map(|i| format!(r#"{{"id":"skin-{i}0","name":"S"}}"#)).collect::<Vec<_>>().join(",");
+        assert!(matches!(p(&format!(r#""skins":[{many}]"#)), Err(SetupError::BadSkin(_))));
+        let j = skin_card(r#""skin":"my-glow""#).replace(r#""rect":[70,120,300,160]"#, r#""rect":[70,120,300,160],"skin":"nope-nope""#);
+        assert!(matches!(SetupCard::parse(&j), Err(SetupError::BadSkin(_))));
+    }
+
+    #[test]
+    fn export_writes_only_the_custom_skins_that_are_used() {
+        let glow = Skin::from_value(&serde_json::from_str(GLOW).unwrap()).unwrap();
+        let other = Skin::from_value(&serde_json::json!({ "id": "unused-one", "name": "Unused" })).unwrap();
+        let items = vec![ExportItem { widget: "com.plinth.clock".into(), version: "1.0.0".into(), monitor: 0, x: 72.0, y: 72.0, w: 360.0, h: 118.0, skin: Some("terminal".into()) }];
+        let c = SetupCard::export("Skinned", "Me", "dusk", None, &[(1920.0, 1080.0)], &items, Some("my-glow"), &[glow.clone(), other]).unwrap();
+        assert_eq!(c.skins, vec![glow]);
+        assert_eq!(c.skin.as_deref(), Some("my-glow"));
+        assert_eq!(SetupCard::parse(&c.to_json()).unwrap(), c);
+        // the default skin is the default: it is not written
+        let d = SetupCard::export("Plain", "Me", "dusk", None, &[(1920.0, 1080.0)], &items[..1].iter().map(|i| ExportItem { skin: None, ..ExportItem { widget: i.widget.clone(), version: i.version.clone(), monitor: 0, x: i.x, y: i.y, w: i.w, h: i.h, skin: None } }).collect::<Vec<_>>(), Some(skin::DEFAULT_ID), &[]).unwrap();
+        assert_eq!(d.skin, None);
+    }
+
     #[test]
     fn export_round_trips_and_keeps_widgets_on_their_monitors() {
         let items = vec![
-            ExportItem { widget: "com.plinth.clock".into(), version: "1.0.0".into(), monitor: 0, x: 72.0, y: 72.0, w: 360.0, h: 118.0 },
-            ExportItem { widget: "com.plinth.pcvitals".into(), version: "1.0.0".into(), monitor: 1, x: 10.0, y: 10.0, w: 400.0, h: 250.0 },
+            ExportItem { widget: "com.plinth.clock".into(), version: "1.0.0".into(), monitor: 0, x: 72.0, y: 72.0, w: 360.0, h: 118.0, skin: None },
+            ExportItem { widget: "com.plinth.pcvitals".into(), version: "1.0.0".into(), monitor: 1, x: 10.0, y: 10.0, w: 400.0, h: 250.0, skin: None },
         ];
-        let card = SetupCard::export("My Rig: night!", "Me", "dusk", Some("#ffb27a"), &[(1920.0, 1080.0), (1280.0, 400.0)], &items).unwrap();
+        let card = SetupCard::export("My Rig: night!", "Me", "dusk", Some("#ffb27a"), &[(1920.0, 1080.0), (1280.0, 400.0)], &items, None, &[]).unwrap();
         assert_eq!(card.id, "local.my-rig-night");
         let back = SetupCard::parse(&card.to_json()).unwrap();
         assert_eq!(back, card);
         assert_eq!((back.widgets[0].monitor, back.widgets[1].monitor), (0, 1));
         assert!(!card.to_json().to_ascii_lowercase().contains("display#"), "no hardware ids in a shared card");
         // a widget wider than its monitor is clamped, never rejected
-        let big = vec![ExportItem { widget: "a.b".into(), version: "1.0.0".into(), monitor: 0, x: 5000.0, y: -50.0, w: 9000.0, h: 9000.0 }];
-        let c2 = SetupCard::export("Big", "Me", "graphite", None, &[(1920.0, 1080.0)], &big).unwrap();
+        let big = vec![ExportItem { widget: "a.b".into(), version: "1.0.0".into(), monitor: 0, x: 5000.0, y: -50.0, w: 9000.0, h: 9000.0, skin: None }];
+        let c2 = SetupCard::export("Big", "Me", "graphite", None, &[(1920.0, 1080.0)], &big, None, &[]).unwrap();
         assert!(c2.widgets[0].x + c2.widgets[0].w <= GRID && c2.widgets[0].y + c2.widgets[0].h <= GRID);
-        assert!(SetupCard::export("None", "Me", "graphite", None, &[(1920.0, 1080.0)], &[]).is_err());
+        assert!(SetupCard::export("None", "Me", "graphite", None, &[(1920.0, 1080.0)], &[], None, &[]).is_err());
         assert_eq!(slug_id("  "), "my-setup");
     }
 }

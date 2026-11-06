@@ -1,6 +1,6 @@
 {
   "note": "Status is only 'done' with evidence. 'partial' states what is missing. Update in the same commit as the work.",
-  "version": "0.7.0",
+  "version": "0.14.0",
   "features": [
     {
       "id": "F01",
@@ -139,6 +139,27 @@
       "status": "partial",
       "evidence": "Moods and cards autotest 11/11 (rule applies, stands down after a manual choice, reapplies after a context change, suggestion after 3 manual choices, accept creates one rule, card export, review, apply, undo); click test 52/52; 13 new core tests",
       "missing": "cost of the 5 s context poll not measured; wallpapers are not part of cards; no store; Builds showcase not built"
+    },
+    {
+      "id": "F22",
+      "name": "Drag-and-drop widget placement (edit overlay on the desktop, draggable hub diagram, snapping, per-monitor)",
+      "status": "partial",
+      "evidence": "2026-11-06 on this PC (two real 1920x1080 monitors): scripts/dragtest.ps1 14/14 in 3 runs in a row with the real mouse (pointer over a widget reaches the overlay; outside widgets it reaches the desktop; drop saved; drag onto the other monitor saved its stable id; Done removes the overlay); fake-monitor lifecycle test 17/17 incl. hub place and a refused drop while parked; 18 core tests for snap/retarget/placed incl. mixed DPI and reconcile round trip; click test 55/55 with the new hub",
+      "missing": "dragging in the hub diagram with a real pointer NOT TESTED (its place command is tested); keyboard nudge NOT TESTED; touch/pen NOT TESTED; mixed DPI and the 1280x400 case screen only covered by unit tests (the second monitor on this PC is now 1920x1080); overlay is uniformly translucent, not per-pixel; right-click Move to monitor still not built"
+    },
+    {
+      "id": "F23",
+      "name": "Motion overlays for still wallpapers (particles, soft light, rain, gradient drift)",
+      "status": "partial",
+      "evidence": "2026-11-06: overlay autotest 14/14 (sandboxed iframe with only two numbers in its query, served 200, loaded in the live layer, yields to a live wallpaper with the reason shown, governor unloads and reloads it, amount and speed change the query and the cost, refused as a wallpaper, none in Safe mode); core tests (9 motion, 1 wallpaper kind) and a host CSP test; cost measured once per overlay on this PC (RESULTS.md)",
+      "missing": "CPU figures are noisy single runs and the covered case did not drop to about 0 (NOT explained); GPU load NOT measured; overlay is drawn on the primary monitor only; the look of the four overlays was not reviewed by screenshot; no import of user overlays (bundled only); not tested on battery, in a real game or in a remote session"
+    },
+    {
+      "id": "F24",
+      "name": "Custom skins (data-only look tokens: global and per widget, in setup cards, hub editor)",
+      "status": "partial",
+      "evidence": "2026-11-06: skins autotest 11/11 and click test 59/59 (Skins view opens, Make a copy saves a custom skin) on this PC (live layer computed styles match the skin: 30 px corners, rgba(16,32,48,0.7), blur 32 px; per-widget override; bad skins and hostile cards refused; export card parses strictly and holds no CSS characters; import under a new id without overwriting; Undo; delete falls back to default); 17 skin and card tests in plinth-core; one screenshot showed Terminal (monospace), Paper card (serif, Notes) and Soft pill (clock) on the real desktop",
+      "missing": "font, ink and accent delivery to widgets is OBSERVED once by screenshot, not asserted by a test; the hub editor was not click-tested (its commands are tested); hard-to-read warning is a WCAG ratio, not tested on people; widgets without Plinth's SDK keep their own font and accent; no per-monitor skins; skins are not in the hub's live preview of scenes"
     }
   ]
 }

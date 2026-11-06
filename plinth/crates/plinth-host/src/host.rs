@@ -364,3 +364,20 @@ pub fn valid_copy(instance: &str) -> bool {
         None => false,
     }
 }
+
+#[cfg(test)]
+mod sdk_tests {
+    use super::SDK_JS;
+
+    #[test]
+    fn skin_messages_are_applied_only_after_the_sender_is_checked_and_values_are_validated() {
+        let parent_check = SDK_JS.find("e.source !== parent").expect("the SDK checks who sent a message");
+        let skin = SDK_JS.find("plinthSkin").expect("the SDK understands skin messages");
+        assert!(parent_check < skin, "the sender check must come before any skin handling");
+        assert!(SDK_JS.contains("^#[0-9a-fA-F]{6}$"), "the accent must be a hex color");
+        assert!(SDK_JS.contains("k.font.length < 160"), "the font stack is length-limited");
+        for banned in ["eval(", "innerHTML", "Function(", "document.write", "importScripts", "fetch("] {
+            assert!(!SDK_JS.contains(banned), "the SDK must not contain {banned}");
+        }
+    }
+}

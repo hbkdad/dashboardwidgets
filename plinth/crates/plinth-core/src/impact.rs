@@ -39,6 +39,7 @@ pub const VIDEO_WALLPAPER_EXTRA: Impact = Impact { ram_mb: 90.0, cpu_pct: 2.6 };
 pub fn wallpaper_extra(kind: crate::wallpaper::WallpaperKind) -> Impact {
     match kind {
         crate::wallpaper::WallpaperKind::Web => WEB_WALLPAPER_EXTRA,
+        crate::wallpaper::WallpaperKind::Overlay => crate::motion::OVERLAY_EXTRA,
         crate::wallpaper::WallpaperKind::Video => VIDEO_WALLPAPER_EXTRA,
     }
 }

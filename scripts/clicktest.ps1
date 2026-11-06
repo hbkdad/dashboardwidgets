@@ -89,6 +89,15 @@ try {
   Check "Monitors view lists the real monitors with their numbers" (Wait-Until { [bool](Find-Like $w ("1 " + [char]0x00B7 + " *")) } 8)
   Invoke-ByName $w "Identify monitors" | Out-Null
   Check "Identify monitors was handled" (Wait-Until { Select-String -Path $log -Pattern "hub: identify handled" -Quiet } 8)
+  Check "Monitors view offers Edit layout on my desktop (drag placement)" ([bool](Find-ByName $w "Edit layout on my desktop"))
+  Invoke-ByName $w "Skins" | Out-Null
+  Check "Skins view shows the built-in Terminal skin and the all-widgets chooser" (Wait-Until { [bool](Find-Like $w "Terminal*") -and [bool](Find-ByName $w "Skin for all widgets") } 8)
+  $t = Find-Like $w "Terminal*"; Invoke-Element $t | Out-Null; Start-Sleep -Milliseconds 400
+  Invoke-ByName $w "Make a copy to edit" | Out-Null
+  Check "Make a copy to edit saved a custom skin (data only) and kept the built-in one" (Wait-Until { $s = St; $s -and @($s.skins).Count -eq 1 -and $s.skins[0].font -eq "mono" -and $s.skins[0].name -eq "Terminal copy" } 8)
+  Invoke-ByName $w "Wallpapers" | Out-Null
+  Check "Wallpapers view has the Motion overlay chooser" (Wait-Until { [bool](Find-ByName $w "Motion overlay") } 8)
+  Invoke-ByName $w "Monitors" | Out-Null
   # --- moods and setup cards ---
   Invoke-ByName $w "Moods" | Out-Null
   Start-Sleep -Milliseconds 600
