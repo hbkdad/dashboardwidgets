@@ -3,6 +3,8 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Audited
+- Once-over of v0.14.0 recorded in `research/once-over-2026-11-06.md` (findings, research, suggested order).
 
 ## [0.14.0] - 2026-11-06
 Drag-and-drop placement, motion overlays and custom skins. Three feature branches chained (`feat/drag-placement`, `feat/motion-overlays`, `feat/skins`); not yet merged to main or tagged.
