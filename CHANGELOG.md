@@ -3,6 +3,8 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Changed
+- Docs: progress log brought to v0.13.1; PRD and roadmap now cite the Seelen UI hands-on test (`research/seelen-ui-handson-test.md`). CI runs the host and proxy tests as well as core.
 
 ## [0.13.1] - 2026-10-30
 ### Fixed

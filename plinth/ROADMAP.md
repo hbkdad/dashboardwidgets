@@ -8,7 +8,7 @@ Mirrors `../design/business-and-roadmap.md` §5. Targets are planning assumption
 - [~] Spike B: release build, 5 sandboxed iframe widgets = 158.7 MB private / 359 MB WS sum / 8 processes / 0.21% of one core idle (blank page 146 MB); 10 widgets 166 MB. Fixed WebView2 cost dominates, so <150 MB target NOT met. Iframes add no processes (web-level isolation only). Not tested: real widgets, low-end HW, multi-monitor, hours-long leak check. See `spikes/webview-probe/RESULTS.md`.
 - [~] Spike C: srcdoc sandbox alone leaks network and starves the host (7/8 runs). **Per-origin custom-protocol delivery + header CSP + host frame-src: 0 server hits, hog contained (5/5), about +29 MB and +1 process per widget.** Next: hybrid design (first-party shared origin, third-party own origin), memory-bomb test, wire broker to the real host. See `spikes/sandbox-probe/RESULTS.md`.
 - [ ] Interviews and landing page (non-code, see design docs); add a "post your setup card" test to measure copy-culture on Windows
-- Skipped by decision: hands-on Seelen UI test.
+- Done 2026-11-06: hands-on Seelen UI test (v2.8.10) in `research/seelen-ui-handson-test.md`; lock/sleep, real game, desktop widgets under Win+D remain NOT TESTED.
 
 - [x] host-demo: plinth-host + WebView2 end to end, 11/11 checks (see `apps/host-demo/RESULTS.md`)
 - [x] Spike D: `plinth-proxy` deny-by-default proxy built; 4/4 end-to-end runs with 0 direct connections (see `apps/host-demo/RESULTS.md`). Still to do: HTTPS allow-path test, per-widget attribution, `wss`, WebView2 service traffic allow-list, production wiring (start proxy with the host, update allow-list on grant change)
