@@ -3,6 +3,8 @@
 All notable changes to this project are recorded here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [Semantic Versioning](https://semver.org/), see `CONTRIBUTING.md`. Pre-1.0 (`0.y.z`): anything may change; the minor number moves with each completed milestone.
 
 ## [Unreleased]
+### Verified
+- Full local run on this PC (2026-11-06): all unit tests, autotest 21/21, monitors 15/15, Moods 11/11, click test 55/55, library 10/10, lock/unlock and short sleep/resume survived. Details in `claude-progress.md`.
 ### Changed
 - Docs: progress log brought to v0.13.1; PRD and roadmap now cite the Seelen UI hands-on test (`research/seelen-ui-handson-test.md`). CI runs the host and proxy tests as well as core.
 

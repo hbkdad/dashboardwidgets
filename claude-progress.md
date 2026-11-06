@@ -1,5 +1,12 @@
 # Progress log (update at the end of every work session)
 
+## PC test run 2026-11-06 (v0.13.1, this PC: Windows 11 build 26300, two monitors, release build)
+- PASS: `cargo test --workspace` (83 core, 25 host, 8 proxy, 19 app; 3 app tests ignored); app autotest 21/21; fake-monitor lifecycle 15/15; Moods and cards 11/11; real-hub click test 55/55; background 3/3; log 3/3; wallpaper library end to end 10/10 on the real monitors (Windows' wallpaper registry path unchanged afterwards; Plinth's own check says Revert restored every monitor).
+- Lock/unlock: app stayed alive, memory normal, idle CPU 0.008% of the CPU afterwards; log shows widgets paused then resumed. Layer visuals after unlock NOT checked by screenshot (my window enumeration cannot see the layer: it is a child of the desktop window).
+- Sleep/resume (Windows log: sleep 12:26:14, resume 12:26:18): app alive, idle CPU 0.017%, and a screenshot after resume shows the clock, vitals, graphs, notes and build widgets on both monitors (OBSERVED). Short sleep (about 4 s), not an overnight one.
+- NOT TESTED: video wallpaper checks (needs a test clip; `make-test-video.py` needs a browser to record it), display wake/hot-plug on a real dock, mixed DPI, virtual desktops, Win key after wake (Plinth has no Start menu), a real game, low-end hardware. Script quirk found: my lock/sleep helper closed the hub, so its final Revert click did not run (isolated test state only).
+- Compiler warnings present in the app crate (unused assignments, dead code); CI has no clippy step yet.
+
 ## State as of 2026-11-06 (v0.13.1)
 - v0.13.0: Live Graphs widget; new first-party widgets are auto-granted what they declare. v0.13.1: no console window (GUI subsystem), rotating log, Settings diagnostics report, verify script waits for the app. v0.12.1: hub memory measured at 10k pictures.
 - Unit tests (2026-11-06, `cargo test --workspace`): 83 core, 25 host, 8 proxy, 19 app (3 ignored), all pass. App autotests, click test and release build NOT re-run in this audit.
